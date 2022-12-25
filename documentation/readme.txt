@@ -1,0 +1,2 @@
+- started 25/12/2022 
+- start based on Kotlin 'Empty Compose Activity'
