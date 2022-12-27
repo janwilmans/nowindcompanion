@@ -1,28 +1,31 @@
 package com.example.nowindcompanion
 
+import android.content.res.AssetFileDescriptor
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.OutlinedButton
-import androidx.compose.material.Surface
-import androidx.compose.material.Text
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
 import com.example.nowindcompanion.ui.theme.NowindCompanionTheme
-
 import com.ftdi.j2xx.D2xxManager
 
 class MainActivity : ComponentActivity() {
@@ -32,96 +35,137 @@ class MainActivity : ComponentActivity() {
         var ftD2xx =  D2xxManager.getInstance(this)
 
         setContent {
-            NowindCompanionTheme {
+            val painter = painterResource(id = R.drawable.nowindv1)
+            val painter2 = painterResource(id = R.drawable.nowindv2)
+            Column() {
 
-                RecyclerView()
+                Box(modifier = Modifier
+                    .fillMaxWidth(0.5f)
+                    .padding(16.dp)
+                )
+                {
+                    ImageCard(painter = painter, contentDescription = "Test content ipsum lorem", title = "Nowind Interface V1")
+                }
 
-//                // A surface container using the 'background' color from the theme
-//                Surface(
-//                    modifier = Modifier.fillMaxSize(),
-//                    color = MaterialTheme.colors.background
-//                ) {
-//                    Greeting("Nowind")
+                Row(modifier = Modifier
+                    .fillMaxWidth(0.5f)
+                    .padding(16.dp)) {
+                    ImageCard(painter = painter2, contentDescription = "Test content ipsum lorem", title = "Nowind Interface V2")
+                }
+            }
+
+
+//            NowindCompanionTheme {
+////                Surface(modifier = Modifier.fillMaxSize()) {
+////                    MessageCard(Message("Android", "Jetpack Compose"))
+////                }
+//
+//                Column(
+//                    modifier = Modifier
+//                        .background(Color.Green)
+//                        .fillMaxHeight(0.5f)
+//                        .fillMaxWidth()
+//                        .border(5.dp, Color.Magenta)
+//                        .padding(16.dp)
+//                        .border(5.dp, Color.Blue)
+//                        .padding(16.dp)
+//                )
+//                {
+//                    Text("Hello", modifier = Modifier.clickable {
+//
+//                    })
+//                    Text("World")
+//                    Text("Nowind")
+//                    Spacer(modifier = Modifier.height(50.dp))
+//                    Text("Interface")
 //                }
-            }
+//            }
         }
     }
 }
 
+data class Message(val author: String, val body: String)
 
 @Composable
-fun ListItem(name : String){
-
-    val expanded = remember { mutableStateOf(false)}
-    val extraPadding by animateDpAsState(
-        if (expanded.value) 24.dp else 0.dp,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        )
+fun ImageCard(
+    painter: Painter,
+    contentDescription: String,
+    title: String,
+    modifier: Modifier = Modifier
+  )
+{
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(15.dp),
+        elevation = 5.dp
     )
-
-    Surface(color = MaterialTheme.colors.primary,
-        modifier = Modifier.padding(vertical = 4.dp, horizontal = 8.dp)){
-
-        Column(modifier = Modifier
-            .padding(24.dp)
-            .fillMaxWidth()) {
-
-            Row{
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                ) {
-                    Text(text = "Course")
-                    Text(text = name, style = MaterialTheme.typography.h4.copy(
-                        fontWeight = FontWeight.ExtraBold
-                    ))
-                }
-
-                OutlinedButton(onClick = { expanded.value = !expanded.value }) {
-                    Text(if (expanded.value) "Show less" else "Show more")
-                }
-            }
-
-            if (expanded.value){
-
-                Column(modifier = Modifier.padding(
-                    bottom = extraPadding.coerceAtLeast(0.dp)
-                )) {
-                    Text(text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.")
-                }
-
+    {
+        Box(modifier = Modifier.height(200.dp))
+        {
+            Image(
+                painter = painter,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Fit
+            )
+            Box(modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Black
+                        ),
+                        startY = 300f
+                    )
+                ))
+            Box(modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+                contentAlignment = Alignment.BottomStart
+            )
+            {
+                Text(title, style = TextStyle(color = Color.White), fontSize = 16.sp)
             }
         }
-
     }
+
 }
 
-@Composable
-fun RecyclerView(names : List<String> = List(1000){"$it"}){
+//
+//@Composable
+//fun MessageCard(msg: Message) {
+//    Row(modifier = Modifier.padding(all = 8.dp)) {
+//        Image(
+//            painter = painterResource(R.drawable.profile_picture),
+//            contentDescription = null,
+//            modifier = Modifier
+//                .size(40.dp)
+//                .clip(CircleShape)
+//                .border(1.5.dp, MaterialTheme.colors.secondary, CircleShape)
+//        )
+//
+//        Spacer(modifier = Modifier.width(8.dp))
+//
+//        Column {
+//            Text(
+//                text = msg.author,
+//                color = MaterialTheme.colors.secondaryVariant
+//            )
+//
+//            Spacer(modifier = Modifier.height(4.dp))
+//            Text(text = msg.body)
+//        }
+//    }
+//}
 
-    LazyColumn(modifier = Modifier.padding(
-        vertical = 4.dp)){
-
-        items(items = names){ name ->
-
-            ListItem(name = name)
-
-        }
-    }
-}
-
-@Composable
-fun Greeting(name: String) {
-    Text(text = "Hello $name!")
-}
-
-@Preview(showBackground = true)
-@Composable
-fun DefaultPreview() {
-    NowindCompanionTheme {
-        ListItem(name ="Pipo")
-    }
-}
+//@Preview
+//@Composable
+//fun DefaultPreview() {
+//    NowindCompanionTheme {
+//        Surface {
+//            MessageCard(
+//                msg = Message("Colleague", "Take a look at Jetpack Compose, it's great!")
+//            )
+//        }
+//    }
+//}
