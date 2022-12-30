@@ -36,42 +36,90 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
 import com.example.nowindcompanion.ui.theme.NowindCompanionTheme
-import com.ftdi.j2xx.D2xxManager
 import kotlin.random.Random
+import com.google.accompanist.pager.HorizontalPager
 
+// kotlin: https://pl.kotl.in/xHBgsipa_
 
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+@Composable
+fun HomeScreen() {
+    val painter = painterResource(id = R.drawable.nowindv1)
+    val painter2 = painterResource(id = R.drawable.nowindv2)
+    Column() {
 
-        Log.i("tag", "Initialize nowind connect")
-        val connection = FTDIClient(this)
-        var data = connection.getIncomingDataUpdates();
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.5f)
+                .padding(16.dp)
+        )
+        {
+            ImageCard(
+                painter = painter,
+                contentDescription = "Test content ipsum lorem",
+                title = "Nowind Interface V1"
+            )
+        }
 
-        setContent {
-            Column(Modifier.fillMaxSize()) {
-                val color = remember {
-                    mutableStateOf(Color.Yellow)
-                }
-                ColorBox(
-                    Modifier.weight(1f).fillMaxSize()
-                )
-                {
-                    color.value = it
-                }
-                Box(
-                    modifier = Modifier
-                        .background(color.value)
-                        .weight(1f)
-                        .fillMaxSize()
-                )
-            }
-
+        Row(
+            modifier = Modifier
+                .fillMaxWidth(0.5f)
+                .padding(16.dp)
+        ) {
+            ImageCard(
+                painter = painter2,
+                contentDescription = "Test content ipsum lorem",
+                title = "Nowind Interface V2"
+            )
         }
     }
 }
 
-class MainActivityFTDI : ComponentActivity() {
+@Composable
+fun SettingScreen() {
+    Column(Modifier.fillMaxSize()) {
+        val color = remember {
+            mutableStateOf(Color.Yellow)
+        }
+        ColorBox(
+            Modifier.weight(1f).fillMaxSize()
+        )
+        {
+            color.value = it
+        }
+        Box(
+            modifier = Modifier
+                .background(color.value)
+                .weight(1f)
+                .fillMaxSize()
+        )
+    }
+}
+
+@Composable
+fun DebugScreen() {
+
+}
+
+//            modifier = Modifier
+//                    .fillMaxWidth()
+//                  .weight(1f)
+//             items = listOf(HomeScreen(), SettingScreen(), DebugScreen()),
+//             titles = listOf("Home", "Setting", "Debug")
+
+@Composable
+fun FrontPage() {
+    NowindCompanionTheme {
+        HorizontalPager(count = 3)
+        { page ->
+            Text(
+                text = "Page: $page",
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -98,43 +146,16 @@ class MainActivityFTDI : ComponentActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
-
+//        val layout = findViewById<RelativeLayout>(R.id.root)
+//        layout ?.addView(textView)
         // Add TextView to LinearLayout
-        //layout ?.addView(textView)
 
         setContent {
-            val painter = painterResource(id = R.drawable.nowindv1)
-            val painter2 = painterResource(id = R.drawable.nowindv2)
-            Column() {
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.5f)
-                        .padding(16.dp)
-                )
-                {
-                    ImageCard(
-                        painter = painter,
-                        contentDescription = "Test content ipsum lorem",
-                        title = "Nowind Interface V1"
-                    )
-                }
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth(0.5f)
-                        .padding(16.dp)
-                ) {
-                    ImageCard(
-                        painter = painter2,
-                        contentDescription = "Test content ipsum lorem",
-                        title = "Nowind Interface V2"
-                    )
-                }
-            }
+            FrontPage()
         }
     }
 }
+
 
 class MainActivityExperimentColors : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

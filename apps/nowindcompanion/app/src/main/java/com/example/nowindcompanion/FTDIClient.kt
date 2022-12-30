@@ -5,8 +5,10 @@ import android.os.Debug
 import android.util.Log
 import com.ftdi.j2xx.D2xxManager
 import com.ftdi.j2xx.D2xxManager.FtDeviceInfoListNode
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 
 class FTDIClient (
         private val context: Context,
@@ -19,6 +21,13 @@ class FTDIClient (
         val deviceList = arrayOfNulls<FtDeviceInfoListNode>(numberOfDevices)
         ftD2xx.getDeviceInfoList(numberOfDevices, deviceList)
         Log.i("tag", "FTDI found $numberOfDevices devices")
+
+//        GlobalScope.launch {
+//            while (true) {
+//                // code to run on each iteration of the polling loop goes here
+//                delay(5000) // pause for 5 seconds before running the loop again
+//            }
+//        }
 
 
         return callbackFlow {
