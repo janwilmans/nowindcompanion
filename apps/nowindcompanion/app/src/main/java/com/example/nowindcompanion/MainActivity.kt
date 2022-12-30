@@ -104,11 +104,17 @@ fun SettingScreen(messagelist: MessageList) {
 
 @Composable
 fun DebugScreen(messagelist: MessageList) {
-    LazyColumn{
-        items(messagelist.messages){ data ->
-            Text(text = data)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+    ){
+        LazyColumn{
+            items(messagelist.messages){ data ->
+                Text(text = data)
+            }
         }
     }
+
 }
 
 @OptIn(ExperimentalPagerApi::class)
