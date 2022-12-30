@@ -91,7 +91,7 @@ fun SettingScreen(messagelist: MessageList) {
         )
         {
             color.value = it
-            messagelist.write("color changes!")  // not adding any message?
+            messagelist.write("color changes to $color.value!")  // not adding any message?
         }
         Box(
             modifier = Modifier
