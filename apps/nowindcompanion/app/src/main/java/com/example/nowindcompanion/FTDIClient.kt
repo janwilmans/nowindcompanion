@@ -1,6 +1,5 @@
 package com.example.nowindcompanion
 
-import NowindState
 import android.content.Context
 import android.os.Debug
 import android.util.Log
@@ -13,10 +12,10 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 
 class FTDIClient (
-        private val context: Context,
-        private var state: NowindState,
-        private var ftD2xx: D2xxManager =  D2xxManager.getInstance(context)
-        ) : FTDI_Interface {
+    private val context: Context,
+    private var state: NowindState,
+    private var ftD2xx: D2xxManager =  D2xxManager.getInstance(context)
+) : FTDI_Interface {
 
     override fun getIncomingDataUpdates(): Flow<ByteArray> {
 
@@ -41,27 +40,14 @@ class FTDIClient (
                 delay(2000) // pause for 5 seconds before running the loop again
             }
         }
-
-
         return callbackFlow {
             if (!context.hasNowindPermissions())
             {
                 throw Exception("Missing Nowind Permissions")
             }
-
-
-//            var callback = object: () -> ByteArray {
-//
-//                launch { send(byteArray) }
-//                awaitClose
-//                {
-//                    // close ftdi connection
-//                }
-//
-//            }
-
-
         }
     }
 }
+
+
 

@@ -1,8 +1,14 @@
 package com.example.nowindcompanion
 
-import NowindState
+import MessageList
+import android.content.res.AssetFileDescriptor
 import android.os.Bundle
 import android.util.Log
+import android.util.TypedValue
+import android.view.ViewGroup
+import android.widget.RelativeLayout
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -10,17 +16,22 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.*
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -28,7 +39,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
 import com.example.nowindcompanion.ui.theme.NowindCompanionTheme
-import com.google.accompanist.pager.*
+import com.google.accompanist.pager.ExperimentalPagerApi
+import com.google.accompanist.pager.HorizontalPager
 import kotlin.random.Random
 
 // kotlin: https://pl.kotl.in/xHBgsipa_
@@ -48,7 +60,6 @@ fun Logo(painter: Painter, text : String) {
         )
     }
 }
-
 
 @Composable
 fun HomeScreen(state: NowindState) {
@@ -77,7 +88,7 @@ fun SettingScreen(state: NowindState) {
         )
         {
             color.value = it
-            state.write("color changes to $color.value!")
+            state.write("color changes to $color.value!")  // not adding any message?
         }
         Box(
             modifier = Modifier
@@ -94,52 +105,71 @@ fun DebugScreen(state: NowindState) {
         modifier = Modifier
             .fillMaxSize()
     ){
-        val messages = state.messages
-        LazyColumn {
-            items(messages.data) { data ->
+        LazyColumn{
+            items(state.messages.data) { data ->
                 Text(text = data)
             }
         }
     }
-
 }
 
 @OptIn(ExperimentalPagerApi::class)
 @Composable
 fun FrontPage(state: NowindState) {
     NowindCompanionTheme {
-        Row() {
-            Text("dit is een header", style = TextStyle(color = Color.Black), fontSize = 16.sp)
-        }
-        Row() {
-            HorizontalPager(count = 3)
-            { page ->
-                when(page) {
-                    0-> HomeScreen(state)
-                    1 -> SettingScreen(state)
-                    2 -> DebugScreen(state)
-                }
+        HorizontalPager(count = 3)
+        { page ->
+            when(page) {
+                0-> HomeScreen(state)
+                1 -> SettingScreen(state)
+                2 -> DebugScreen(state)
             }
         }
-        Row() {
-            Text("dit is een footer", style = TextStyle(color = Color.Black), fontSize = 16.sp)
-        }
-
     }
 }
 
 class MainActivity : ComponentActivity() {
-
-    var state = NowindState()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         Log.i("tag", "Initialize nowind main")
-        val connection = FTDIClient(this, state)
-        var data = connection.getIncomingDataUpdates();
 
         setContent {
+            val state = NowindState()
+            val connection = FTDIClient(this, state)
+            var data = connection.getIncomingDataUpdates();
             FrontPage(state)
+        }
+    }
+}
+
+
+class MainActivityExperimentColors : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        setContent {
+            NowindCompanionTheme {
+                Column(
+                    modifier = Modifier
+                        .background(Color.Green)
+                        .fillMaxHeight(0.5f)
+                        .fillMaxWidth()
+                        .border(5.dp, Color.Magenta)
+                        .padding(16.dp)
+                        .border(5.dp, Color.Blue)
+                        .padding(16.dp)
+                )
+                {
+                    Text("Hello", modifier = Modifier.clickable {
+
+                    })
+                    Text("World")
+                    Text("Nowind")
+                    Spacer(modifier = Modifier.height(50.dp))
+                    Text("Interface")
+                }
+            }
         }
     }
 }

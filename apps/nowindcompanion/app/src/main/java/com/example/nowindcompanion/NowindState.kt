@@ -1,11 +1,10 @@
+package com.example.nowindcompanion
+
+import MessageList
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import java.text.SimpleDateFormat
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import java.util.*
 
 class NowindState : ViewModel() {
@@ -16,7 +15,8 @@ class NowindState : ViewModel() {
         V2 { override fun toString() : String { return "Nowind interface V2" } }
     }
 
-    val messages : MessageList = MessageList()
+    var messages : MessageList = MessageList()
+
     val version : MutableState<DetectedNowindVersion> = mutableStateOf(DetectedNowindVersion.None)
 
     fun setVersion(_version: DetectedNowindVersion)
