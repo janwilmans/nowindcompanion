@@ -1,11 +1,7 @@
 class MessageList {
+    public var data = mutableListOf<String>()
 
-    public var messages = mutableListOf<String>()
-
-    public final fun write(message: String)
-    {
-        messages.add(message)
+    fun write(message: String) {
+        data.add(message)
     }
-
-
 }
