@@ -1,14 +1,7 @@
 package com.example.nowindcompanion
 
-import MessageList
-import android.content.res.AssetFileDescriptor
 import android.os.Bundle
 import android.util.Log
-import android.util.TypedValue
-import android.view.ViewGroup
-import android.widget.RelativeLayout
-import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -26,6 +19,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -65,12 +60,12 @@ fun Logo(painter: Painter, text : String) {
 fun HomeScreen(state: NowindState) {
     val painter = painterResource(id = R.drawable.nowindv1)
     val painter2 = painterResource(id = R.drawable.nowindv2)
-    Column() {
-        var version = state.version
-        when (version.value) {
+    Column {
+        val version : NowindState.DetectedNowindVersion by state.version.observeAsState(NowindState.DetectedNowindVersion.None)
+        when (version) {
             NowindState.DetectedNowindVersion.None -> Text(text = "Waiting...")
-            NowindState.DetectedNowindVersion.V1 -> Logo(painter, version.value.toString())
-            NowindState.DetectedNowindVersion.V2 -> Logo(painter2, version.value.toString())
+            NowindState.DetectedNowindVersion.V1 -> Logo(painter, version.toString())
+            NowindState.DetectedNowindVersion.V2 -> Logo(painter2, version.toString())
         }
     }
 }
@@ -105,8 +100,9 @@ fun DebugScreen(state: NowindState) {
         modifier = Modifier
             .fillMaxSize()
     ){
-        LazyColumn{
-            items(state.messages.data) { data ->
+        val messages : MutableList<String> by state.messages.observeAsState(mutableListOf())
+        LazyColumn {
+            items(messages) { data ->
                 Text(text = data)
             }
         }
@@ -137,7 +133,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val state = NowindState()
             val connection = FTDIClient(this, state)
-            var data = connection.getIncomingDataUpdates();
+            connection.getIncomingDataUpdates()
             FrontPage(state)
         }
     }
