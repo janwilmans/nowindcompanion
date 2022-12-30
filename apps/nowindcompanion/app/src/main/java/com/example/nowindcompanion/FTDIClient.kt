@@ -22,6 +22,7 @@ class FTDIClient (
         ftD2xx.getDeviceInfoList(numberOfDevices, deviceList)
         Log.i("tag", "FTDI found $numberOfDevices devices")
 
+
 //        GlobalScope.launch {
 //            while (true) {
 //                // code to run on each iteration of the polling loop goes here

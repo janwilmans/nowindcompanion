@@ -1,5 +1,6 @@
 package com.example.nowindcompanion
 
+import MessageList
 import android.content.res.AssetFileDescriptor
 import android.os.Bundle
 import android.util.Log
@@ -22,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,13 +39,14 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
 import com.example.nowindcompanion.ui.theme.NowindCompanionTheme
-import kotlin.random.Random
+import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
+import kotlin.random.Random
 
 // kotlin: https://pl.kotl.in/xHBgsipa_
 
 @Composable
-fun HomeScreen() {
+fun HomeScreen(messagelist: MessageList) {
     val painter = painterResource(id = R.drawable.nowindv1)
     val painter2 = painterResource(id = R.drawable.nowindv2)
     Column() {
@@ -75,16 +79,19 @@ fun HomeScreen() {
 }
 
 @Composable
-fun SettingScreen() {
+fun SettingScreen(messagelist: MessageList) {
     Column(Modifier.fillMaxSize()) {
         val color = remember {
             mutableStateOf(Color.Yellow)
         }
         ColorBox(
-            Modifier.weight(1f).fillMaxSize()
+            Modifier
+                .weight(1f)
+                .fillMaxSize()
         )
         {
             color.value = it
+            messagelist.write("color changes!")  // not adding any message?
         }
         Box(
             modifier = Modifier
@@ -96,25 +103,26 @@ fun SettingScreen() {
 }
 
 @Composable
-fun DebugScreen() {
-
+fun DebugScreen(messagelist: MessageList) {
+    LazyColumn{
+        items(messagelist.messages){ data ->
+            Text(text = data)
+        }
+    }
 }
 
-//            modifier = Modifier
-//                    .fillMaxWidth()
-//                  .weight(1f)
-//             items = listOf(HomeScreen(), SettingScreen(), DebugScreen()),
-//             titles = listOf("Home", "Setting", "Debug")
-
+@OptIn(ExperimentalPagerApi::class)
 @Composable
 fun FrontPage() {
     NowindCompanionTheme {
+        val messagelist = MessageList()
         HorizontalPager(count = 3)
         { page ->
-            Text(
-                text = "Page: $page",
-                modifier = Modifier.fillMaxWidth()
-            )
+            when(page) {
+                0-> HomeScreen(messagelist)
+                1 -> SettingScreen(messagelist)
+                2 -> DebugScreen(messagelist)
+            }
         }
     }
 }
@@ -126,29 +134,6 @@ class MainActivity : ComponentActivity() {
         Log.i("tag", "Initialize nowind main")
         val connection = FTDIClient(this)
         var data = connection.getIncomingDataUpdates();
-
-        // Create TextView programmatically.
-        val textView = TextView(this)
-
-        // setting height and width
-        textView.layoutParams = RelativeLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-        // setting text
-        textView.setText("GEEKSFORGEEKS")
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40f)
-        // onClick the text a message will be displayed "HELLO GEEK"
-        textView.setOnClickListener()
-        {
-            Toast.makeText(
-                this, "HELLO GEEK",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-//        val layout = findViewById<RelativeLayout>(R.id.root)
-//        layout ?.addView(textView)
-        // Add TextView to LinearLayout
 
         setContent {
             FrontPage()
