@@ -7,7 +7,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.*
-import androidx.compose.runtime.Composable
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -19,10 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -33,6 +30,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nowindcompanion.ui.theme.NowindCompanionTheme
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
@@ -57,21 +55,21 @@ fun Logo(painter: Painter, text : String) {
 }
 
 @Composable
-fun HomeScreen(state: NowindState) {
+fun HomeScreen(viewModel: NowindViewModel) {
     val painter = painterResource(id = R.drawable.nowindv1)
     val painter2 = painterResource(id = R.drawable.nowindv2)
     Column {
-        val version : NowindState.DetectedNowindVersion by state.version.observeAsState(NowindState.DetectedNowindVersion.None)
+        val version : NowindViewModel.DetectedNowindVersion by viewModel.version.observeAsState(NowindViewModel.DetectedNowindVersion.None)
         when (version) {
-            NowindState.DetectedNowindVersion.None -> Text(text = "Waiting...")
-            NowindState.DetectedNowindVersion.V1 -> Logo(painter, version.toString())
-            NowindState.DetectedNowindVersion.V2 -> Logo(painter2, version.toString())
+            NowindViewModel.DetectedNowindVersion.None -> Text(text = "Waiting...")
+            NowindViewModel.DetectedNowindVersion.V1 -> Logo(painter, version.toString())
+            NowindViewModel.DetectedNowindVersion.V2 -> Logo(painter2, version.toString())
         }
     }
 }
 
 @Composable
-fun SettingScreen(state: NowindState) {
+fun SettingScreen(viewModel: NowindViewModel) {
     Column(Modifier.fillMaxSize()) {
         val color = remember {
             mutableStateOf(Color.Yellow)
@@ -83,7 +81,7 @@ fun SettingScreen(state: NowindState) {
         )
         {
             color.value = it
-            state.write("color changes to $color.value!")  // not adding any message?
+            viewModel.write("color changes to $color.value!")  // not adding any message?
         }
         Box(
             modifier = Modifier
@@ -95,12 +93,13 @@ fun SettingScreen(state: NowindState) {
 }
 
 @Composable
-fun DebugScreen(state: NowindState) {
+fun DebugScreen(viewModel: NowindViewModel) {
     Box(
         modifier = Modifier
             .fillMaxSize()
     ){
-        val messages : MutableList<String> by state.messages.observeAsState(mutableListOf())
+        //val messages : MutableList<String> by state.messages.observeAsState(mutableListOf())
+        val messages by viewModel.state_messages.collectAsState()
         LazyColumn {
             items(messages) { data ->
                 Text(text = data)
@@ -111,14 +110,14 @@ fun DebugScreen(state: NowindState) {
 
 @OptIn(ExperimentalPagerApi::class)
 @Composable
-fun FrontPage(state: NowindState) {
+fun FrontPage(viewModel: NowindViewModel) {
     NowindCompanionTheme {
         HorizontalPager(count = 3)
         { page ->
             when(page) {
-                0-> HomeScreen(state)
-                1 -> SettingScreen(state)
-                2 -> DebugScreen(state)
+                0-> HomeScreen(viewModel)
+                1 -> SettingScreen(viewModel)
+                2 -> DebugScreen(viewModel)
             }
         }
     }
@@ -131,7 +130,7 @@ class MainActivity : ComponentActivity() {
         Log.i("tag", "Initialize nowind main")
 
         setContent {
-            val state = NowindState()
+            val state = viewModel<NowindViewModel>()
             val connection = FTDIClient(this, state)
             connection.getIncomingDataUpdates()
             FrontPage(state)

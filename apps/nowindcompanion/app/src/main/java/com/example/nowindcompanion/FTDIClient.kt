@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 
 class FTDIClient (
     private val context: Context,
-    private var state: NowindState,
+    private var viewModel: NowindViewModel,
     private var ftD2xx: D2xxManager =  D2xxManager.getInstance(context)
 ) : FTDI_Interface {
 
@@ -27,15 +27,15 @@ class FTDIClient (
                 val deviceList = arrayOfNulls<FtDeviceInfoListNode>(numberOfDevices)
                 ftD2xx.getDeviceInfoList(numberOfDevices, deviceList)
 
-                state.write(" FTDI <POLLING> ")
+                viewModel.write(" FTDI <POLLING> ")
 
                 if (numberOfDevices != foundDevices) {
-                    state.write("Found $numberOfDevices FTDI OTG devices")
+                    viewModel.write("Found $numberOfDevices FTDI OTG devices")
                     foundDevices = numberOfDevices
                     if (foundDevices == 0)
-                        state.setVersion(NowindState.DetectedNowindVersion.None)
+                        viewModel.setVersion(NowindViewModel.DetectedNowindVersion.None)
                     else
-                        state.setVersion(NowindState.DetectedNowindVersion.V2)
+                        viewModel.setVersion(NowindViewModel.DetectedNowindVersion.V2)
                 }
                 delay(2000) // pause for 5 seconds before running the loop again
             }
