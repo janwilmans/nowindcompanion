@@ -59,11 +59,11 @@ fun HomeScreen(viewModel: NowindViewModel) {
     val painter = painterResource(id = R.drawable.nowindv1)
     val painter2 = painterResource(id = R.drawable.nowindv2)
     Column {
-        val version : NowindViewModel.DetectedNowindVersion by viewModel.version.observeAsState(NowindViewModel.DetectedNowindVersion.None)
+        val version : DetectedNowindVersion by viewModel.version.observeAsState(DetectedNowindVersion.None)
         when (version) {
-            NowindViewModel.DetectedNowindVersion.None -> Text(text = "Waiting...")
-            NowindViewModel.DetectedNowindVersion.V1 -> Logo(painter, version.toString())
-            NowindViewModel.DetectedNowindVersion.V2 -> Logo(painter2, version.toString())
+            DetectedNowindVersion.None -> Text(text = "Waiting...")
+            DetectedNowindVersion.V1 -> Logo(painter, version.toString())
+            DetectedNowindVersion.V2 -> Logo(painter2, version.toString())
         }
     }
 }
@@ -81,7 +81,7 @@ fun SettingScreen(viewModel: NowindViewModel) {
         )
         {
             color.value = it
-            viewModel.write("color changes to $color.value!")  // not adding any message?
+            viewModel.write("color changes to $color.value!")
         }
         Box(
             modifier = Modifier
@@ -129,10 +129,10 @@ class MainActivity : ComponentActivity() {
         Log.i("tag", "Initialize nowind main")
 
         setContent {
-            val state = viewModel<NowindViewModel>()
-            val connection = FTDIClient(this, state)
+            val viewModel = viewModel<NowindViewModel>()
+            val connection = FTDIClient(this, viewModel)
             connection.getIncomingDataUpdates()
-            FrontPage(state)
+            FrontPage(viewModel)
         }
     }
 }

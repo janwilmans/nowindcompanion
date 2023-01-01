@@ -5,15 +5,15 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
+public enum class DetectedNowindVersion {
+    None { override fun toString() : String { return "None" } },
+    V1 { override fun toString() : String { return "Nowind interface V1" } },
+    V2 { override fun toString() : String { return "Nowind interface V2" } }
+}
+
 class NowindViewModel(
     private val savedStateHandle : SavedStateHandle
 ) : ViewModel() {
-
-    public enum class DetectedNowindVersion {
-        None { override fun toString() : String { return "None" } },
-        V1 { override fun toString() : String { return "Nowind interface V1" } },
-        V2 { override fun toString() : String { return "Nowind interface V2" } }
-    }
 
     private val _messages : MutableLiveData<List<String>> = MutableLiveData()
     private val _version : MutableLiveData<DetectedNowindVersion> = MutableLiveData(DetectedNowindVersion.None)
