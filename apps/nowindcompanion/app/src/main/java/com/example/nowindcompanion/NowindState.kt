@@ -1,13 +1,6 @@
 package com.example.nowindcompanion
 
-import MessageList
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.*
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -39,7 +32,10 @@ class NowindViewModel(
         val now = formatter.format(time)
 
         viewModelScope.launch {
-            _messages.value = listOf<String>(message)
+            val list: List<String> = _messages.value.let { it ?: emptyList() }
+            var mutableList = list.takeLast(24).toMutableList();
+            mutableList.add("$now: $message")
+            _messages.value = mutableList
         }
     }
 }

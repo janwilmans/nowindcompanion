@@ -37,7 +37,7 @@ class FTDIClient (
                     else
                         viewModel.setVersion(NowindViewModel.DetectedNowindVersion.V2)
                 }
-                delay(2000) // pause for 5 seconds before running the loop again
+                delay(250) // pause for 5 seconds before running the loop again
             }
         }
         return callbackFlow {
