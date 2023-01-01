@@ -1,5 +1,7 @@
 package com.example.nowindcompanion
 
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -16,13 +18,17 @@ class NowindViewModel(
 ) : ViewModel() {
 
     private val _messages : MutableLiveData<List<String>> = MutableLiveData()
-    private val _version : MutableLiveData<DetectedNowindVersion> = MutableLiveData(DetectedNowindVersion.None)
+    private val _deviceInfo : MutableLiveData<DeviceInfo> = MutableLiveData(DeviceInfo())
     val messages: LiveData<List<String>> get() = _messages  // public read-only version
-    var version: LiveData<DetectedNowindVersion> = _version // public read-only version
 
-    fun setVersion(my_version: DetectedNowindVersion)
+    var messages2 : MutableState<MessageList> = mutableStateOf(MessageList())
+    var deviceInfo: LiveData<DeviceInfo> = _deviceInfo // public read-only version
+    var deviceInfo2 : MutableState<DeviceInfo> = mutableStateOf(DeviceInfo())
+
+    fun setDeviceInfo(info: DeviceInfo)
     {
-        _version.postValue(my_version)
+        _deviceInfo.postValue(info)
+        deviceInfo2.value = info
     }
 
     fun write(message : String)
@@ -36,6 +42,8 @@ class NowindViewModel(
             var mutableList = list.takeLast(24).toMutableList();
             mutableList.add("$now: $message")
             _messages.value = mutableList
+
+            messages2.value = messages2.value.add(message)
         }
     }
 }

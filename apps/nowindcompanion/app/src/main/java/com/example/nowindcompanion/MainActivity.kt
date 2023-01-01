@@ -35,6 +35,7 @@ import com.example.nowindcompanion.ui.theme.NowindCompanionTheme
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
 import kotlin.random.Random
+import androidx.compose.runtime.*
 
 // kotlin: https://pl.kotl.in/xHBgsipa_
 
@@ -59,7 +60,9 @@ fun HomeScreen(viewModel: NowindViewModel) {
     val painter = painterResource(id = R.drawable.nowindv1)
     val painter2 = painterResource(id = R.drawable.nowindv2)
     Column {
-        val version : DetectedNowindVersion by viewModel.version.observeAsState(DetectedNowindVersion.None)
+        //val deviceInfo : DeviceInfo by viewModel.deviceInfo.observeAsState().value
+        val deviceInfo2 = viewModel.deviceInfo2.value
+        val version = deviceInfo2.version
         when (version) {
             DetectedNowindVersion.None -> Text(text = "Waiting...")
             DetectedNowindVersion.V1 -> Logo(painter, version.toString())
@@ -98,9 +101,10 @@ fun DebugScreen(viewModel: NowindViewModel) {
         modifier = Modifier
             .fillMaxSize()
     ){
-        val messages by viewModel.messages.observeAsState(mutableListOf())
+        //val messages by viewModel.messages.observeAsState(mutableListOf())
+        val messages = viewModel.messages2.value
         LazyColumn {
-            items(messages) { data ->
+            items(messages.data) { data ->
                 Text(text = data)
             }
         }

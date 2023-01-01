@@ -11,6 +11,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 
+class DeviceInfo(val serial: String = "", val version: DetectedNowindVersion = DetectedNowindVersion.None) {
+
+
+}
 
 class FTDIClient (
     private val context: Context,
@@ -25,7 +29,6 @@ class FTDIClient (
         Writing,
     }
 
-
     suspend fun search() {
 
         var foundDevices = 0
@@ -39,10 +42,13 @@ class FTDIClient (
             if (numberOfDevices != foundDevices) {
                 viewModel.write("Found $numberOfDevices FTDI OTG devices")
                 foundDevices = numberOfDevices
-                if (foundDevices == 0)
-                    viewModel.setVersion(DetectedNowindVersion.None)
-                else
-                    viewModel.setVersion(DetectedNowindVersion.V2)
+                if (foundDevices == 0) {
+                    viewModel.setDeviceInfo(DeviceInfo())
+                }
+                else {
+                    val info : DeviceInfo = DeviceInfo(deviceList[0]?.serialNumber.toString(), DetectedNowindVersion.V2)
+                    viewModel.setDeviceInfo(info)
+                }
             }
             delay(250) // pause for 5 seconds before running the loop again
         }
