@@ -27,8 +27,10 @@ class NowindViewModel(
 
     fun setDeviceInfo(info: DeviceInfo)
     {
-        _deviceInfo.postValue(info)
-        deviceInfo2.value = info
+        viewModelScope.launch {
+            _deviceInfo.postValue(info)
+            deviceInfo2.value = info
+        }
     }
 
     fun write(message : String)

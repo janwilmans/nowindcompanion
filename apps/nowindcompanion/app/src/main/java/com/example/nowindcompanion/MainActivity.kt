@@ -40,7 +40,7 @@ import androidx.compose.runtime.*
 // kotlin: https://pl.kotl.in/xHBgsipa_
 
 @Composable
-fun Logo(painter: Painter, text : String) {
+fun DeviceCard(painter: Painter, info : DeviceInfo) {
     Box(
         modifier = Modifier
             .fillMaxWidth(0.5f)
@@ -50,9 +50,13 @@ fun Logo(painter: Painter, text : String) {
         ImageCard(
             painter = painter,
             contentDescription = "",
-            title = text
+            title = info.version.toString()
         )
     }
+    val serial : String = info.serial
+    val description : String = info.description
+    Text(text = "Serial number: '$serial'")
+    Text(text = "Description  : '$description'")
 }
 
 @Composable
@@ -65,8 +69,8 @@ fun HomeScreen(viewModel: NowindViewModel) {
         val version = deviceInfo2.version
         when (version) {
             DetectedNowindVersion.None -> Text(text = "Waiting...")
-            DetectedNowindVersion.V1 -> Logo(painter, version.toString())
-            DetectedNowindVersion.V2 -> Logo(painter2, version.toString())
+            DetectedNowindVersion.V1 -> DeviceCard(painter, deviceInfo2)
+            DetectedNowindVersion.V2 -> DeviceCard(painter2, deviceInfo2)
         }
     }
 }
