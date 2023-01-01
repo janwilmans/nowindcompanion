@@ -98,8 +98,8 @@ fun DebugScreen(viewModel: NowindViewModel) {
         modifier = Modifier
             .fillMaxSize()
     ){
-        //val messages : MutableList<String> by state.messages.observeAsState(mutableListOf())
-        val messages by viewModel.state_messages.collectAsState()
+        val messages by viewModel.messages.observeAsState(mutableListOf())
+        val messages2 by viewModel.state_messages.collectAsState()
         LazyColumn {
             items(messages) { data ->
                 Text(text = data)

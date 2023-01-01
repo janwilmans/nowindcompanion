@@ -28,14 +28,14 @@ class NowindViewModel(
 
     private val _messages : MutableLiveData<MutableList<String>> = MutableLiveData(mutableListOf())
     private val _version : MutableLiveData<DetectedNowindVersion> = MutableLiveData(DetectedNowindVersion.None)
-    var messages: LiveData<MutableList<String>> = _messages
+    val messages: LiveData<MutableList<String>> = _messages
     var version: MutableLiveData<DetectedNowindVersion> = _version
 
     val state_messages = savedStateHandle.getStateFlow("messages", mutableStateListOf<String>())
 
     fun setVersion(_version: DetectedNowindVersion)
     {
-        version.value = _version
+        version.postValue(_version)
     }
 
     fun write(message : String)
@@ -44,12 +44,11 @@ class NowindViewModel(
         val time = Calendar.getInstance().time
         val formatter = SimpleDateFormat("HH:mm:ss.SSS")
         val now = formatter.format(time)
-        //messages.value?.add("$now: $message")
-        //state_messages.value.add("$now: $message")
 
-        var messages: MutableList<String> = state_messages.value
-        messages.add("$now: $message")
-        savedStateHandle["messages"] = messages
-
+//        var my_messages = _messages.value
+//        my_messages?.add("$now: $message")
+//        _messages.postValue(my_messages)
+//
+//        //state_messages.value.add("$now: $message")
     }
 }
