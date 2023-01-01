@@ -5,10 +5,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.*
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -25,30 +22,24 @@ class NowindViewModel(
         V2 { override fun toString() : String { return "Nowind interface V2" } }
     }
 
-
-    private val _messages : MutableLiveData<MutableList<String>> = MutableLiveData(mutableListOf())
+    private val _messages : MutableLiveData<List<String>> = MutableLiveData()
     private val _version : MutableLiveData<DetectedNowindVersion> = MutableLiveData(DetectedNowindVersion.None)
-    val messages: LiveData<MutableList<String>> = _messages
-    var version: MutableLiveData<DetectedNowindVersion> = _version
+    val messages: LiveData<List<String>> get() = _messages  // public read-only version
+    var version: LiveData<DetectedNowindVersion> = _version // public read-only version
 
-    val state_messages = savedStateHandle.getStateFlow("messages", mutableStateListOf<String>())
-
-    fun setVersion(_version: DetectedNowindVersion)
+    fun setVersion(my_version: DetectedNowindVersion)
     {
-        version.postValue(_version)
+        _version.postValue(my_version)
     }
 
     fun write(message : String)
     {
-
         val time = Calendar.getInstance().time
         val formatter = SimpleDateFormat("HH:mm:ss.SSS")
         val now = formatter.format(time)
 
-//        var my_messages = _messages.value
-//        my_messages?.add("$now: $message")
-//        _messages.postValue(my_messages)
-//
-//        //state_messages.value.add("$now: $message")
+        viewModelScope.launch {
+            _messages.value = listOf<String>(message)
+        }
     }
 }

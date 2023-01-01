@@ -99,7 +99,6 @@ fun DebugScreen(viewModel: NowindViewModel) {
             .fillMaxSize()
     ){
         val messages by viewModel.messages.observeAsState(mutableListOf())
-        val messages2 by viewModel.state_messages.collectAsState()
         LazyColumn {
             items(messages) { data ->
                 Text(text = data)
