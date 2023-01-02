@@ -63,28 +63,27 @@ fun DeviceCard(painter: Painter, info : DeviceInfo) {
 fun HomeScreen(viewModel: NowindViewModel) {
     val painter = painterResource(id = R.drawable.nowindv1)
     val painter2 = painterResource(id = R.drawable.nowindv2)
-    Column {
-        //val deviceInfo : DeviceInfo by viewModel.deviceInfo.observeAsState().value
-        val deviceInfo2 = viewModel.deviceInfo2.value
-        val version = deviceInfo2.version
+    Column(Modifier.fillMaxWidth()) {
+        val info = viewModel.deviceInfo.value
+        val version = info.version
         when (version) {
             DetectedNowindVersion.None -> Text(text = "Waiting...")
-            DetectedNowindVersion.V1 -> DeviceCard(painter, deviceInfo2)
-            DetectedNowindVersion.V2 -> DeviceCard(painter2, deviceInfo2)
+            DetectedNowindVersion.V1 -> DeviceCard(painter, info)
+            DetectedNowindVersion.V2 -> DeviceCard(painter2, info)
         }
     }
 }
 
 @Composable
 fun SettingScreen(viewModel: NowindViewModel) {
-    Column(Modifier.fillMaxSize()) {
+    Column( Modifier.fillMaxWidth() ) {
         val color = remember {
             mutableStateOf(Color.Yellow)
         }
         ColorBox(
             Modifier
-                .weight(1f)
-                .fillMaxSize()
+                .weight(0.3f)
+                .fillMaxWidth()
         )
         {
             color.value = it
@@ -93,20 +92,16 @@ fun SettingScreen(viewModel: NowindViewModel) {
         Box(
             modifier = Modifier
                 .background(color.value)
-                .weight(1f)
-                .fillMaxSize()
+                .weight(0.3f)
+                .fillMaxWidth()
         )
     }
 }
 
 @Composable
 fun DebugScreen(viewModel: NowindViewModel) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-    ){
-        //val messages by viewModel.messages.observeAsState(mutableListOf())
-        val messages = viewModel.messages2.value
+    Box( Modifier.fillMaxWidth()){
+        val messages = viewModel.messages.value
         LazyColumn {
             items(messages.data) { data ->
                 Text(text = data)
@@ -117,16 +112,58 @@ fun DebugScreen(viewModel: NowindViewModel) {
 
 @OptIn(ExperimentalPagerApi::class)
 @Composable
+fun Pager(viewModel: NowindViewModel) {
+    HorizontalPager(
+        count = 3)
+    { page ->
+        when (page) {
+            0 -> HomeScreen(viewModel)
+            1 -> SettingScreen(viewModel)
+            2 -> DebugScreen(viewModel)
+        }
+    }
+}
+
+@Composable
 fun FrontPage(viewModel: NowindViewModel) {
     NowindCompanionTheme {
-        HorizontalPager(count = 3)
-        { page ->
-            when(page) {
-                0-> HomeScreen(viewModel)
-                1 -> SettingScreen(viewModel)
-                2 -> DebugScreen(viewModel)
+        Surface(color = MaterialTheme.colors.background) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceEvenly
+                ) {
+                Row {
+                    Text( text = "Nowind Companion (C) Jan Wilmans",
+                        modifier = Modifier
+                            .background(Color.LightGray)
+                            .requiredHeight(50.dp)
+                            .fillMaxWidth()
+                            //.weight(0.5f)
+                    )
+//                    Draw {
+//                        drawCircle(
+//                            color = Color.Red,
+//                            radius = 50f,
+//                            shape = CircleShape
+//                        )
+//                    }
+                }
+                // BottomAppBar try out
+
+                Row(Modifier.weight(1f).fillMaxSize()) {
+                    Pager(viewModel)
+                }
+
+//                Text( text = "foot",
+//                    modifier = Modifier
+//                        .background(Color.Blue)
+//                        .requiredHeight(50.dp)
+//                        .fillMaxWidth()
+//                        .weight(2f)
+//                )
             }
         }
+
     }
 }
 
