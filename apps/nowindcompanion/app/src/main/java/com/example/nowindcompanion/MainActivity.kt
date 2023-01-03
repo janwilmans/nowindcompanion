@@ -133,7 +133,8 @@ fun FrontPage(viewModel: NowindViewModel) {
                 verticalArrangement = Arrangement.SpaceEvenly
                 ) {
                 Row {
-                    Text( text = "Nowind Companion (C) Jan Wilmans",
+                    val buildNumber = BuildConfig.VERSION_CODE
+                    Text( text = "Nowind Companion (C) Jan Wilmans ($buildNumber)",
                         modifier = Modifier
                             .background(Color.LightGray)
                             .requiredHeight(50.dp)
@@ -176,6 +177,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel = viewModel<NowindViewModel>()
             val connection = FTDIClient(this, viewModel)
+
             connection.getIncomingDataUpdates()
             FrontPage(viewModel)
         }

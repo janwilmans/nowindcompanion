@@ -19,6 +19,39 @@ class NowindViewModel(
 
     var messages : MutableState<MessageList> = mutableStateOf(MessageList())
     var deviceInfo : MutableState<DeviceInfo> = mutableStateOf(DeviceInfo())
+    var dataReadLight : MutableState<Boolean> = mutableStateOf(false)
+    var dataWriteLight : MutableState<Boolean> = mutableStateOf(false)
+    var networkConnectionLight : MutableState<Boolean> = mutableStateOf(false)
+
+    fun lightsOff()
+    {
+        viewModelScope.launch {
+            dataReadLight.value = false
+            dataWriteLight.value = false
+            networkConnectionLight.value = false
+        }
+    }
+
+    fun setReading(value: Boolean)
+    {
+        viewModelScope.launch {
+            dataReadLight.value = value
+        }
+    }
+
+    fun setWriting(value: Boolean)
+    {
+        viewModelScope.launch {
+            dataWriteLight.value = value
+        }
+    }
+
+    fun setNetworkActive(value: Boolean)
+    {
+        viewModelScope.launch {
+            networkConnectionLight.value = value
+        }
+    }
 
     fun setDeviceInfo(info: DeviceInfo)
     {
