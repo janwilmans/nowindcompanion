@@ -1,4 +1,4 @@
-package com.example.nowindcompanion
+package nl.myquest.nowindcompanion
 
 class MessageList(val data: List<String> = listOf()) {
 

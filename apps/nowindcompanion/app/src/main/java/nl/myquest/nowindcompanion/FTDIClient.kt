@@ -1,4 +1,4 @@
-package com.example.nowindcompanion
+package nl.myquest.nowindcompanion
 
 import android.content.Context
 import android.os.Environment

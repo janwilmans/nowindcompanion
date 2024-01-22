@@ -1,4 +1,4 @@
-package com.example.nowindcompanion
+package nl.myquest.nowindcompanion
 
 import kotlinx.coroutines.flow.Flow
 

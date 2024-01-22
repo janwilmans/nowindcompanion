@@ -1,4 +1,4 @@
-package com.example.nowindcompanion
+package nl.myquest.nowindcompanion
 
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
