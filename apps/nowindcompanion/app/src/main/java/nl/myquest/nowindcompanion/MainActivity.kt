@@ -109,7 +109,7 @@ fun DeviceCard(painter: Painter, info : DeviceInfo) {
 fun HomeScreen(viewModel: NowindViewModel) {
     val painter = painterResource(id = R.drawable.nowindv1)
     val painter2 = painterResource(id = R.drawable.nowindv2)
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().fillMaxHeight()) {
         val info = viewModel.deviceInfo.value
         val version = info.version
         when (version) {
@@ -160,7 +160,8 @@ fun DebugScreen(viewModel: NowindViewModel) {
 @Composable
 fun Pager(viewModel: NowindViewModel) {
     val pagerState = rememberPagerState{3}
-    HorizontalPager( state = pagerState)
+    HorizontalPager( state = pagerState,modifier = Modifier
+        .fillMaxHeight())
     { page ->
         when (page) {
             0 -> HomeScreen(viewModel)

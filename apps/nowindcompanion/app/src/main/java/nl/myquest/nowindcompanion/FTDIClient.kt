@@ -75,7 +75,7 @@ class FTDIClient (
             finally {
                 viewModel.setReading(false)
             }
-            delay(250) // pause for 5 seconds before running the loop again
+            delay(2500) // pause for 5 seconds before running the loop again
         }
     }
 
