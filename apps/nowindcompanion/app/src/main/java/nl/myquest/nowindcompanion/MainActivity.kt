@@ -29,7 +29,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardElevation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MaterialTheme.colorScheme
 import androidx.compose.material3.Surface
@@ -51,7 +50,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import nl.myquest.nowindcompanion.ui.theme.NowindCompanionTheme
 import kotlin.random.Random
 
-class MainActivity_example : ComponentActivity() {
+class MainActivityExample : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {

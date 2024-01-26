@@ -37,7 +37,7 @@ class FTDIClient (
 
     fun getDeviceInfo(node : D2xxManager.FtDeviceInfoListNode) : DeviceInfo
     {
-        var info : DeviceInfo = DeviceInfo(DetectedNowindVersion.V2)
+        val info = DeviceInfo(DetectedNowindVersion.V2)
         info.serial = node.serialNumber.toString()
         info.description = node.description.toString()
         return info
@@ -92,16 +92,16 @@ class FTDIClient (
 
     suspend fun host(info: DeviceInfo) {
 
-        val device = ftD2xx.openByIndex(context,0);
+        val device = ftD2xx.openByIndex(context,0)
         if (device == null)
         {
             viewModel.write("Error opening device at index 0!")
-            return;
+            return
         }
         if (device.isOpen() == false)
         {
             viewModel.write("Error opening device at index 0!")
-            return;
+            return
         }
         device.setLatencyTimer(16.toByte())
         val readAndWriteBuffer = 3.toByte()
@@ -116,7 +116,7 @@ class FTDIClient (
         viewModel.write("Start hosting...")
         while (true)
         {
-            val receivedBytes = device.queueStatus;
+            val receivedBytes = device.queueStatus
             if (receivedBytes> 0) {
                 val data = ByteArray(receivedBytes)
                 device.read(data)
@@ -135,11 +135,11 @@ class FTDIClient (
     }
 
     private suspend fun readHeader(index: Int, data: ByteArray): Int {
-        val index = expect_data(0xaf, index, data)
-        return expect_data(0x05, index, data)
+        val dataIndex = expectData(0xaf, index, data)
+        return expectData(0x05, dataIndex, data)
     }
 
-    private suspend fun expect_data(expected: Int, index: Int, data: ByteArray): Int {
+    private suspend fun expectData(expected: Int, index: Int, data: ByteArray): Int {
 
         while (true)
         {
