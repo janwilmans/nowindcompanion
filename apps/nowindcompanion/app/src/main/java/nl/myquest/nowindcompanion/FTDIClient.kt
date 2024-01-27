@@ -161,7 +161,13 @@ class FTDIClient (
 
     fun downloadFile(fileUrl: String, destinationFile: File) {
         try {
-            if (!destinationFile.exists()) {
+            if (destinationFile.exists())
+            {
+                viewModel.write("Found existing: $fileUrl")
+            }
+            else
+            {
+                viewModel.write("Download: $fileUrl")
                 BufferedInputStream(URL(fileUrl).openStream()).use { input ->
                     FileOutputStream(destinationFile).use { output ->
                         val data = ByteArray(1024)
@@ -171,7 +177,9 @@ class FTDIClient (
                         }
                     }
                 }
+                viewModel.write("Done.")
             }
+
         }
         catch (e: Exception)
         {
@@ -202,7 +210,8 @@ class FTDIClient (
 
     fun prepareDisks()
     {
-        val path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        //val path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val path = context.getExternalFilesDir(null);
 
         val puyo = "https://download.file-hunter.com/Games/MSX2/DSK/Puyo%20Puyo%20(en)%20(1991)%20(Compile).zip"
         val aleste2 = "https://download.file-hunter.com/Games/MSX2/DSK/Aleste%202%20(1988)(Compile)(en)(Disk2of3)(Woomb).zip"
