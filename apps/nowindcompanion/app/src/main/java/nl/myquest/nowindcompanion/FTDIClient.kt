@@ -43,7 +43,7 @@ class FTDIClient (
         Writing,
     }
 
-    val readQueue = LinkedList<Int>()  // Host << MSX
+    private val readQueue = Queue()  // Host << MSX
 
     fun getDeviceInfo(node : D2xxManager.FtDeviceInfoListNode) : DeviceInfo
     {
@@ -133,10 +133,6 @@ class FTDIClient (
         val readTimeout : Int = device.readTimeout
         viewModel.write("readTimeout: ${readTimeout}ms")
 
-//        val writeData: String = "test"
-//        val OutData = writeData.toByteArray()
-//        val iLen: Int = device.write(OutData, writeData.length)
-//
         viewModel.write("Start hosting...")
         while (true)
         {
@@ -146,17 +142,10 @@ class FTDIClient (
                 return
             }
             if (receivedBytes > 0) {
-                viewModel.write("receivedBytes $receivedBytes...")
                 val data = ByteArray(receivedBytes)
                 device.read(data)
-                for (value in data) {
-                    readQueue.add(value.toInt() and 0xff)
-                }
-
-                val hexdata = hexString(data)
-                viewModel.write(hexdata)
-                println("received: $hexdata")
-                readHandler()
+                readQueue.add(data)
+                readHandler(readQueue)
             }
             delay(250)
         }
@@ -176,82 +165,19 @@ class FTDIClient (
         return enumValues<NowindCommand>().find { it.value == byteValue }
     }
 
-    private suspend fun readHandler() {
-        viewModel.write("readHandler -2")
-        waitFor(0xAF)
-        viewModel.write("got AF ")
-        waitFor(0x05)
-        viewModel.write("got AF 05")
-        waitForBytes(9)
-        viewModel.write("got 9 bytes")
+    private suspend fun readHandler(queue: Queue) {
+        queue.waitFor(0xAF)
+        queue.waitFor(0x05)
+        queue.waitForBytes(9)
 
-        val BC = readWord(readQueue)
-        val DE = readWord(readQueue)
-        val HL = readWord(readQueue)
-        val F = readByte(readQueue)
-        val A = readByte(readQueue)
-        val CMD = readByte(readQueue)
+        val BC = queue.readWord()
+        val DE = queue.readWord()
+        val HL = queue.readWord()
+        val F = queue.readByte()
+        val A = queue.readByte()
+        val CMD = queue.readByte()
         val commandName = commandToEnum(CMD)?.name ?: "unknown"
-        viewModel.write("CMD: %X; $commandName".format(CMD))
-
-    }
-
-    private fun readByte(readQueue: LinkedList<Int>): Int {
-        return readQueue.pop()
-    }
-
-    private fun readWord(readQueue: LinkedList<Int>): Int {
-        val low = readQueue.pop()
-        return (readQueue.pop() * 256) + low
-    }
-
-    private suspend fun waitFor(value: Int) {
-        viewModel.write("waitFor value: %X".format(value))
-
-        while (true) {
-            val readValue: Int? = readQueue.poll()
-            if (readValue == null) {
-                //viewModel.write("got null, yield")
-                yield()
-                continue
-            }
-            viewModel.write("got value: %X ... judge against value: %X".format(readValue, value))
-            if (readValue == value) {
-                viewModel.write("got value, return")
-                return
-            }
-            viewModel.write("got value: %X ... yield".format(readValue))
-            yield()
-        }
-    }
-
-    private suspend fun waitForBytes(size: Int) {
-        while (true) {
-            if (readQueue.size == size) {
-                return
-            }
-            yield()
-        }
-    }
-
-    private suspend fun expectData(expected: Int, index: Int, data: ByteArray): Int {
-
-        while (true)
-        {
-            if (index < data.size)
-            {
-                val value = data[index]
-                if (expected.toByte() == value)
-                {
-                    return index + 1
-                }
-                else
-                {
-                    throw RuntimeException("$value was read where $expected was expected")
-                }
-            }
-            yield()
-        }
+        viewModel.write("$commandName (%H) BC=%04X, DE=%04X, HL=%04X, F=%X, A=%X".format(CMD, BC, DE, HL, F, A))
     }
 
     fun downloadFile(fileUrl: String, destinationFile: File) {
