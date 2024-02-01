@@ -1,17 +1,25 @@
 package nl.myquest.nowindcompanion
 
 import android.content.Context
-import android.os.Environment
+import android.content.pm.PackageManager
 import com.ftdi.j2xx.D2xxManager
 import com.ftdi.j2xx.D2xxManager.FtDeviceInfoListNode
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.newSingleThreadContext
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.lang.Integer.*
 import java.net.URL
+import java.util.LinkedList
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
@@ -35,6 +43,8 @@ class FTDIClient (
         Writing,
     }
 
+    val readQueue = LinkedList<Int>()  // Host << MSX
+
     fun getDeviceInfo(node : D2xxManager.FtDeviceInfoListNode) : DeviceInfo
     {
         val info = DeviceInfo(DetectedNowindVersion.V2)
@@ -52,18 +62,32 @@ class FTDIClient (
         return getDeviceInfo(node)
     }
 
-    suspend fun search() : DeviceInfo {
+    fun hasOTGFeature(context: Context): Boolean {
+        return context.packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)
+    }
 
+    suspend fun wait_for_device_present() : DeviceInfo {
+        if (hasOTGFeature(context))
+        {
+            viewModel.write("OTG Supported!")
+        }
+        else
+        {
+            viewModel.write("OTG is not supported!")
+        }
         viewModel.write("Ready and waiting...")
+        var foundDevices = 0
         while (true) {
             try {
                 viewModel.setReading(true)
                 var numberOfDevices = ftD2xx.createDeviceInfoList(context)
                 val deviceList = arrayOfNulls<FtDeviceInfoListNode>(numberOfDevices)
                 ftD2xx.getDeviceInfoList(numberOfDevices, deviceList)
-
-                viewModel.write("Found $numberOfDevices FTDI OTG devices")
-                val foundDevices = numberOfDevices
+                if (foundDevices != numberOfDevices)
+                {
+                    viewModel.write("Found $numberOfDevices FTDI OTG devices")
+                    foundDevices = numberOfDevices
+                }
                 if (foundDevices == 0) {
                     viewModel.setDeviceInfo(DeviceInfo())
                 } else {
@@ -75,7 +99,7 @@ class FTDIClient (
             finally {
                 viewModel.setReading(false)
             }
-            delay(2500) // pause for 5 seconds before running the loop again
+            delay(500)
         }
     }
 
@@ -117,26 +141,97 @@ class FTDIClient (
         while (true)
         {
             val receivedBytes = device.queueStatus
-            if (receivedBytes> 0) {
+            if (receivedBytes == -1) // we lost the connection
+            {
+                return
+            }
+            if (receivedBytes > 0) {
+                viewModel.write("receivedBytes $receivedBytes...")
                 val data = ByteArray(receivedBytes)
                 device.read(data)
-                viewModel.write(hexString(data))
-                readHandler(data)
+                for (value in data) {
+                    readQueue.add(value.toInt() and 0xff)
+                }
+
+                val hexdata = hexString(data)
+                viewModel.write(hexdata)
+                println("received: $hexdata")
+                readHandler()
             }
             delay(250)
         }
     }
 
+// received at boot:
+//    AF05 C  B  E  D  L  H  F  A  CMD
+//    AF05 00 00 01 10 C2 FC A4 F5 93 (11) // NowindCommand::CMDREQUEST
+//    AF05 00 00 00 F5 C2 20 45 01 92 (11) // NowindCommand::GETDOSVERSION
+//    AFFF AA 55 FFFF (6)                  // RAM Detection?
+//    AF05 00 00 21 FB 00 00 00 00 85 (11) // NowindCommand::DRIVES
+//    AF05 00 00 2F FD 02 76 7C C9 86 (11) // NowindCommand::INIENV
+//    AA55 FFFF (4)                        // RAM Detection?
 
 
-    private suspend fun readHandler(data: ByteArray) {
-        var index = 0
-        index = readHeader(index, data)
+    fun commandToEnum(byteValue: Int): NowindCommand? {
+        return enumValues<NowindCommand>().find { it.value == byteValue }
     }
 
-    private suspend fun readHeader(index: Int, data: ByteArray): Int {
-        val dataIndex = expectData(0xaf, index, data)
-        return expectData(0x05, dataIndex, data)
+    private suspend fun readHandler() {
+        viewModel.write("readHandler -2")
+        waitFor(0xAF)
+        viewModel.write("got AF ")
+        waitFor(0x05)
+        viewModel.write("got AF 05")
+        waitForBytes(9)
+        viewModel.write("got 9 bytes")
+
+        val BC = readWord(readQueue)
+        val DE = readWord(readQueue)
+        val HL = readWord(readQueue)
+        val F = readByte(readQueue)
+        val A = readByte(readQueue)
+        val CMD = readByte(readQueue)
+        val commandName = commandToEnum(CMD)?.name ?: "unknown"
+        viewModel.write("CMD: %X; $commandName".format(CMD))
+
+    }
+
+    private fun readByte(readQueue: LinkedList<Int>): Int {
+        return readQueue.pop()
+    }
+
+    private fun readWord(readQueue: LinkedList<Int>): Int {
+        val low = readQueue.pop()
+        return (readQueue.pop() * 256) + low
+    }
+
+    private suspend fun waitFor(value: Int) {
+        viewModel.write("waitFor value: %X".format(value))
+
+        while (true) {
+            val readValue: Int? = readQueue.poll()
+            if (readValue == null) {
+                //viewModel.write("got null, yield")
+                yield()
+                continue
+            }
+            viewModel.write("got value: %X ... judge against value: %X".format(readValue, value))
+            if (readValue == value) {
+                viewModel.write("got value, return")
+                return
+            }
+            viewModel.write("got value: %X ... yield".format(readValue))
+            yield()
+        }
+    }
+
+    private suspend fun waitForBytes(size: Int) {
+        while (true) {
+            if (readQueue.size == size) {
+                return
+            }
+            yield()
+        }
     }
 
     private suspend fun expectData(expected: Int, index: Int, data: ByteArray): Int {
@@ -249,9 +344,9 @@ class FTDIClient (
 
             while (true)
             {
-                val info = search()
+                val info = wait_for_device_present()
                 host(info)
-                viewModel.write("loop...")
+                viewModel.write("nowind disconnected!")
             }
             //val device = ftD2xx.openBySerialNumber(info.serial)
         }
