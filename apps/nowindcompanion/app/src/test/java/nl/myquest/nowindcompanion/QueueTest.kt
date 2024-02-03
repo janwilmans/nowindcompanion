@@ -1,5 +1,6 @@
 package nl.myquest.nowindcompanion
 
+import android.os.Debug
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch

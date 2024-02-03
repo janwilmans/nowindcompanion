@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import com.ftdi.j2xx.D2xxManager
 import com.ftdi.j2xx.D2xxManager.FtDeviceInfoListNode
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
@@ -19,21 +20,23 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.lang.Integer.*
 import java.net.URL
+import java.nio.ByteBuffer
 import java.util.LinkedList
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
+import kotlin.random.Random
 
 
-class DeviceInfo(val version: DetectedNowindVersion = DetectedNowindVersion.None)
-{
+class DeviceInfo(val version: DetectedNowindVersion = DetectedNowindVersion.None) {
     var serial: String = ""
     var description: String = ""
 }
 
-class FTDIClient (
-    private val context: Context,
-    private var viewModel: NowindViewModel,
-    private var ftD2xx: D2xxManager = D2xxManager.getInstance(context)
+@OptIn(DelicateCoroutinesApi::class)
+class FTDIClient(
+        private val context: Context,
+        private var viewModel: NowindViewModel,
+        private var ftD2xx: D2xxManager = D2xxManager.getInstance(context)
 ) : FTDI_Interface {
 
     public enum class HostState {
@@ -45,34 +48,28 @@ class FTDIClient (
 
     private val readQueue = Queue()  // Host << MSX
 
-    fun getDeviceInfo(node : D2xxManager.FtDeviceInfoListNode) : DeviceInfo
-    {
+    private fun getDeviceInfo(node: D2xxManager.FtDeviceInfoListNode): DeviceInfo {
         val info = DeviceInfo(DetectedNowindVersion.V2)
         info.serial = node.serialNumber.toString()
         info.description = node.description.toString()
         return info
     }
 
-    fun getDeviceInfoOpt(node : D2xxManager.FtDeviceInfoListNode?) : DeviceInfo
-    {
-        if (node == null)
-        {
+    private fun getDeviceInfoOpt(node: D2xxManager.FtDeviceInfoListNode?): DeviceInfo {
+        if (node == null) {
             return DeviceInfo()
         }
         return getDeviceInfo(node)
     }
 
-    fun hasOTGFeature(context: Context): Boolean {
+    private fun hasOTGFeature(context: Context): Boolean {
         return context.packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)
     }
 
-    suspend fun wait_for_device_present() : DeviceInfo {
-        if (hasOTGFeature(context))
-        {
+    private fun wait_for_device_present(): DeviceInfo {
+        if (hasOTGFeature(context)) {
             viewModel.write("OTG Supported!")
-        }
-        else
-        {
+        } else {
             viewModel.write("OTG is not supported!")
         }
         viewModel.write("Ready and waiting...")
@@ -83,8 +80,7 @@ class FTDIClient (
                 var numberOfDevices = ftD2xx.createDeviceInfoList(context)
                 val deviceList = arrayOfNulls<FtDeviceInfoListNode>(numberOfDevices)
                 ftD2xx.getDeviceInfoList(numberOfDevices, deviceList)
-                if (foundDevices != numberOfDevices)
-                {
+                if (foundDevices != numberOfDevices) {
                     viewModel.write("Found $numberOfDevices FTDI OTG devices")
                     foundDevices = numberOfDevices
                 }
@@ -95,11 +91,10 @@ class FTDIClient (
                     viewModel.setDeviceInfo(info = info)
                     return info
                 }
-            }
-            finally {
+            } finally {
                 viewModel.setReading(false)
             }
-            delay(500)
+            Thread.sleep(500)
         }
     }
 
@@ -114,28 +109,25 @@ class FTDIClient (
         return String(hexChars)
     }
 
-    suspend fun host(info: DeviceInfo) {
+    private suspend fun host() {
 
-        val device = ftD2xx.openByIndex(context,0)
-        if (device == null)
-        {
+        val device = ftD2xx.openByIndex(context, 0)
+        if (device == null) {
             viewModel.write("Error opening device at index 0!")
             return
         }
-        if (device.isOpen() == false)
-        {
+        if (!device.isOpen) {
             viewModel.write("Error opening device at index 0!")
             return
         }
         device.setLatencyTimer(16.toByte())
         val readAndWriteBuffer = 3.toByte()
         device.purge(readAndWriteBuffer)
-        val readTimeout : Int = device.readTimeout
+        val readTimeout: Int = device.readTimeout
         viewModel.write("readTimeout: ${readTimeout}ms")
 
         viewModel.write("Start hosting...")
-        while (true)
-        {
+        while (true) {
             val receivedBytes = device.queueStatus
             if (receivedBytes == -1) // we lost the connection
             {
@@ -146,6 +138,7 @@ class FTDIClient (
                 device.read(data)
                 readQueue.add(data)
                 readHandler(readQueue)
+                continue
             }
             delay(250)
         }
@@ -161,7 +154,7 @@ class FTDIClient (
 //    AA55 FFFF (4)                        // RAM Detection?
 
 
-    fun commandToEnum(byteValue: Int): NowindCommand? {
+    private fun commandToEnum(byteValue: Int): NowindCommand? {
         return enumValues<NowindCommand>().find { it.value == byteValue }
     }
 
@@ -180,36 +173,28 @@ class FTDIClient (
         viewModel.write("$commandName (%H) BC=%04X, DE=%04X, HL=%04X, F=%X, A=%X".format(CMD, BC, DE, HL, F, A))
     }
 
-    fun downloadFile(fileUrl: String, destinationFile: File) {
-        try {
-            if (destinationFile.exists())
-            {
-                viewModel.write("Found existing: $fileUrl")
-            }
-            else
-            {
-                viewModel.write("Download: $fileUrl")
-                BufferedInputStream(URL(fileUrl).openStream()).use { input ->
-                    FileOutputStream(destinationFile).use { output ->
-                        val data = ByteArray(1024)
-                        var count: Int
-                        while (input.read(data).also { count = it } != -1) {
-                            output.write(data, 0, count)
-                        }
+    private fun downloadFile(fileUrl: String, destinationFile: File) = try {
+        if (destinationFile.exists()) {
+            viewModel.write("Found existing: $fileUrl")
+        } else {
+            viewModel.write("Download: $fileUrl")
+            BufferedInputStream(URL(fileUrl).openStream()).use { input ->
+                FileOutputStream(destinationFile).use { output ->
+                    val data = ByteArray(1024)
+                    var count: Int
+                    while (input.read(data).also { count = it } != -1) {
+                        output.write(data, 0, count)
                     }
                 }
-                viewModel.write("Done.")
             }
+            viewModel.write("Done.")
+        }
 
-        }
-        catch (e: Exception)
-        {
-            println("### Exception: $e")
-        }
+    } catch (e: Exception) {
+        println("### Exception: $e")
     }
 
-    fun showzip(zipFile : File)
-    {
+    private fun showzip(zipFile: File) {
         if (!zipFile.exists()) {
             viewModel.write("File not found!")
             return
@@ -229,13 +214,14 @@ class FTDIClient (
         inputStream.close()
     }
 
-    fun prepareDisks()
-    {
+    private fun prepareDisks() {
         //val path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         val path = context.getExternalFilesDir(null);
 
-        val puyo = "https://download.file-hunter.com/Games/MSX2/DSK/Puyo%20Puyo%20(en)%20(1991)%20(Compile).zip"
-        val aleste2 = "https://download.file-hunter.com/Games/MSX2/DSK/Aleste%202%20(1988)(Compile)(en)(Disk2of3)(Woomb).zip"
+        val puyo =
+                "https://download.file-hunter.com/Games/MSX2/DSK/Puyo%20Puyo%20(en)%20(1991)%20(Compile).zip"
+        val aleste2 =
+                "https://download.file-hunter.com/Games/MSX2/DSK/Aleste%202%20(1988)(Compile)(en)(Disk2of3)(Woomb).zip"
         downloadFile(puyo, File(path, "puyo.zip"))
         downloadFile(aleste2, File(path, "aleste2.zip"))
 
@@ -254,24 +240,11 @@ class FTDIClient (
             }
         }
 
-//        runBlocking {
-//            launch (Dispatchers.IO)
-//            {
-//                delay(2000) // delay 1
-//            }
-//            launch (Dispatchers.IO)
-//            {
-//                delay(2000) // delay will run parallel to delay 1!!
-//            }
-//            delay(2000)
-//        }
-
         GlobalScope.launch(Dispatchers.Default) {
 
-            while (true)
-            {
-                val info = wait_for_device_present()
-                host(info)
+            while (true) {
+                wait_for_device_present()
+                host()
                 viewModel.write("nowind disconnected!")
             }
             //val device = ftD2xx.openBySerialNumber(info.serial)
@@ -281,12 +254,26 @@ class FTDIClient (
     override fun getIncomingDataUpdates(): Flow<ByteArray> {
 
         return callbackFlow {
-            if (!context.hasNowindPermissions())
-            {
+            if (!context.hasNowindPermissions()) {
                 throw Exception("Missing Nowind Permissions")
             }
         }
     }
+
+
+    fun allocateDirectExample() {
+        // Specify the size of the byte buffer (in bytes)
+        val bufferSize = 1024 * 1024 // 1 MB, adjust as needed
+
+        // Allocate a direct ByteBuffer for continuous memory
+        val byteBuffer = ByteBuffer.allocateDirect(bufferSize)
+
+        // Use the byteBuffer for your operations
+
+        // Release the allocated memory explicitly when done
+        byteBuffer.clear()
+    }
+
 }
 
 
