@@ -112,12 +112,9 @@ class FTDIClient(
     private suspend fun host() {
 
         val device = ftD2xx.openByIndex(context, 0)
-        if (device == null) {
+        if (device == null || !device.isOpen) {
             viewModel.write("Error opening device at index 0!")
-            return
-        }
-        if (!device.isOpen) {
-            viewModel.write("Error opening device at index 0!")
+            delay(2000)
             return
         }
         device.setLatencyTimer(16.toByte())

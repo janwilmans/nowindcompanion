@@ -4,8 +4,13 @@ import kotlinx.coroutines.yield
 import java.util.LinkedList
 
 class Queue(
-    private val queue: LinkedList<Int> = LinkedList<Int>()
+        private val queue: LinkedList<Int> = LinkedList<Int>()
 ) {
+
+    private var start = System.currentTimeMillis()
+    public fun reset() {
+        start = System.currentTimeMillis()
+    }
 
     public suspend fun add(data: ByteArray) {
         for (value in data) {
