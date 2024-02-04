@@ -181,14 +181,50 @@ class FTDIClient(
         queue.waitFor(listOf(0xAF, 0x05))
         queue.waitForBytes(9)
 
-        val BC = queue.readWord()
-        val DE = queue.readWord()
-        val HL = queue.readWord()
-        val F = queue.readByte()
-        val A = queue.readByte()
-        val CMD = queue.readByte()
-        val commandName = commandToEnum(CMD)?.name ?: "unknown"
-        viewModel.write("$commandName (%H) BC=%04X, DE=%04X, HL=%04X, F=%X, A=%X".format(CMD, BC, DE, HL, F, A))
+        val bc = queue.readWord()
+        val de = queue.readWord()
+        val hl = queue.readWord()
+        val f = queue.readByte()
+        val a = queue.readByte()
+        val cmd = queue.readByte()
+        handleCommand(cmd, bc, de, hl, f, a)
+    }
+
+    private fun handleCommand(cmd: Int, bc: Int, de: Int, hl: Int, f: Int, a: Int) {
+
+        val commandName = commandToEnum(cmd)?.name ?: "unknown"
+        viewModel.write("$commandName (%H) BC=%04X, DE=%04X, HL=%04X, F=%X, A=%X".format(cmd, bc, de, hl, f, a))
+        when (commandToEnum(cmd)) {
+            NowindCommand.DSKIO -> TODO()
+            NowindCommand.DSKCHG -> TODO()
+            NowindCommand.GETDPB -> TODO()
+            NowindCommand.CHOICE -> TODO()
+            NowindCommand.DSKFMT -> TODO()
+            NowindCommand.DRIVES -> TODO()
+            NowindCommand.INIENV -> TODO()
+            NowindCommand.GETDATE -> TODO()
+            NowindCommand.DEVICEOPEN -> TODO()
+            NowindCommand.DEVICECLOSE -> TODO()
+            NowindCommand.DEVICERNDIO -> TODO()
+            NowindCommand.DEVICEWRITE -> TODO()
+            NowindCommand.DEVICEREAD -> TODO()
+            NowindCommand.DEVICEEOF -> TODO()
+            NowindCommand.AUXIN -> TODO()
+            NowindCommand.AUXOUT -> TODO()
+            NowindCommand.MESSAGE -> TODO()
+            NowindCommand.CHANGEIMAGE -> TODO()
+            NowindCommand.GETDOSVERSION -> TODO()
+            NowindCommand.CMDREQUEST -> {
+                println("- CMD REQUESTED")
+            }
+
+            NowindCommand.BLOCKREAD -> TODO()
+            NowindCommand.BLOCKWRITE -> TODO()
+            NowindCommand.CPUINFO -> TODO()
+            NowindCommand.COMMAND -> TODO()
+            NowindCommand.STDOUT -> TODO()
+            null -> println("* unknown command: %X ignored".format(cmd))
+        }
     }
 
     private fun downloadFile(fileUrl: String, destinationFile: File) = try {
