@@ -79,4 +79,3 @@ class ExampleInstrumentedTest {
         assertEquals("nl.myquest.nowindcompanion", appContext.packageName)
     }
 }
-

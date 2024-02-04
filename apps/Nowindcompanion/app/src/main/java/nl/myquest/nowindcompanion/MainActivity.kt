@@ -84,9 +84,8 @@ fun GreetingPreview() {
 }
 
 
-
 @Composable
-fun DeviceCard(painter: Painter, info : DeviceInfo) {
+fun DeviceCard(painter: Painter, info: DeviceInfo) {
     Box(
         modifier = Modifier
             .fillMaxWidth(0.5f)
@@ -99,8 +98,8 @@ fun DeviceCard(painter: Painter, info : DeviceInfo) {
             title = info.version.toString()
         )
     }
-    val serial : String = info.serial
-    val description : String = info.description
+    val serial: String = info.serial
+    val description: String = info.description
     Text(text = "Serial number: '$serial'")
     Text(text = "Description  : '$description'")
 }
@@ -109,7 +108,9 @@ fun DeviceCard(painter: Painter, info : DeviceInfo) {
 fun HomeScreen(viewModel: NowindViewModel) {
     val painter = painterResource(id = R.drawable.nowindv1)
     val painter2 = painterResource(id = R.drawable.nowindv2)
-    Column(Modifier.fillMaxWidth().fillMaxHeight()) {
+    Column(Modifier
+        .fillMaxWidth()
+        .fillMaxHeight()) {
         val info = viewModel.deviceInfo.value
         val version = info.version
         when (version) {
@@ -122,7 +123,7 @@ fun HomeScreen(viewModel: NowindViewModel) {
 
 @Composable
 fun SettingScreen(viewModel: NowindViewModel) {
-    Column( Modifier.fillMaxWidth() ) {
+    Column(Modifier.fillMaxWidth()) {
         val color = remember {
             mutableStateOf(Color.Yellow)
         }
@@ -146,7 +147,7 @@ fun SettingScreen(viewModel: NowindViewModel) {
 
 @Composable
 fun DebugScreen(viewModel: NowindViewModel) {
-    Box( Modifier.fillMaxWidth()){
+    Box(Modifier.fillMaxWidth()) {
         val messages = viewModel.messages.value
         LazyColumn {
             items(messages.data) { data ->
@@ -159,8 +160,8 @@ fun DebugScreen(viewModel: NowindViewModel) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Pager(viewModel: NowindViewModel) {
-    val pagerState = rememberPagerState{3}
-    HorizontalPager( state = pagerState,modifier = Modifier
+    val pagerState = rememberPagerState { 3 }
+    HorizontalPager(state = pagerState, modifier = Modifier
         .fillMaxHeight())
     { page ->
         when (page) {
@@ -181,7 +182,7 @@ fun FrontPage(viewModel: NowindViewModel) {
             ) {
                 Row {
                     val buildNumber = 1 //BuildConfig.VERSION_CODE
-                    Text( text = "Nowind Companion (C) Jan Wilmans ($buildNumber)",
+                    Text(text = "Nowind Companion (C) Jan Wilmans ($buildNumber)",
                         modifier = Modifier
                             .background(Color.LightGray)
                             .requiredHeight(50.dp)
@@ -198,7 +199,9 @@ fun FrontPage(viewModel: NowindViewModel) {
                 }
                 // BottomAppBar try out
 
-                Row(Modifier.weight(1f).fillMaxSize()) {
+                Row(Modifier
+                    .weight(1f)
+                    .fillMaxSize()) {
                     Pager(viewModel)
                 }
 
@@ -270,8 +273,7 @@ fun ImageCard(
     contentDescription: String,
     title: String,
     modifier: Modifier = Modifier
-)
-{
+) {
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(15.dp)
@@ -367,4 +369,3 @@ fun ColorBox(modifier: Modifier = Modifier,
         }
     )
 }
-
