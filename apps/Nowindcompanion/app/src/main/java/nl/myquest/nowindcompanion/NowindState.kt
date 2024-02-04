@@ -54,7 +54,7 @@ public enum class NowindCommand(val value: Int) {
 }
 
 class NowindViewModel(
-        private val savedStateHandle: SavedStateHandle
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     var messages: MutableState<MessageList> = mutableStateOf(MessageList())
@@ -97,10 +97,6 @@ class NowindViewModel(
 
     fun write(message: String) {
         println(message)
-        val time = Calendar.getInstance().time
-        val formatter = SimpleDateFormat("HH:mm:ss.SSS")
-        val now = formatter.format(time)
-
         viewModelScope.launch {
             messages.value = messages.value.add(message)
         }

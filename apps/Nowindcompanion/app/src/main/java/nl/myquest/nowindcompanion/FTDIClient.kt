@@ -18,10 +18,12 @@ import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.lang.Integer.*
 import java.net.URL
 import java.nio.ByteBuffer
 import java.util.LinkedList
+import java.util.concurrent.TimeoutException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import kotlin.random.Random
@@ -34,9 +36,9 @@ class DeviceInfo(val version: DetectedNowindVersion = DetectedNowindVersion.None
 
 @OptIn(DelicateCoroutinesApi::class)
 class FTDIClient(
-        private val context: Context,
-        private var viewModel: NowindViewModel,
-        private var ftD2xx: D2xxManager = D2xxManager.getInstance(context)
+    private val context: Context,
+    private var viewModel: NowindViewModel,
+    private var ftD2xx: D2xxManager = D2xxManager.getInstance(context)
 ) : FTDI_Interface {
 
     public enum class HostState {
@@ -130,14 +132,31 @@ class FTDIClient(
             {
                 return
             }
-            if (receivedBytes > 0) {
-                val data = ByteArray(receivedBytes)
-                device.read(data)
-                readQueue.add(data)
-                readHandler(readQueue)
-                continue
+            try {
+                if (receivedBytes > 0) {
+                    val data = ByteArray(receivedBytes)
+                    device.read(data)
+                    readQueue.add(data)
+                    readHandler(readQueue)
+                    continue
+                }
+                delay(250)
+            } catch (e: Exception) {
+                when (e) {
+                    is TimeoutException -> {
+                        println("nowind command timed out, %d bytes remaining in queue.".format(readQueue.size()))
+                        // ignored intentionally
+                    }
+
+                    is IOException -> {
+                        println("nowind command de-sync, %d bytes remaining in queue.".format(readQueue.size()))
+                        // ignored intentionally
+
+                    }
+
+                    else -> throw e
+                }
             }
-            delay(250)
         }
     }
 
@@ -156,8 +175,10 @@ class FTDIClient(
     }
 
     private suspend fun readHandler(queue: Queue) {
-        queue.waitFor(0xAF)
-        queue.waitFor(0x05)
+
+        println("readHandler, %d bytes".format(queue.size()))
+        queue.restartTimeout()
+        queue.waitFor(listOf(0xAF, 0x05))
         queue.waitForBytes(9)
 
         val BC = queue.readWord()
@@ -172,7 +193,7 @@ class FTDIClient(
 
     private fun downloadFile(fileUrl: String, destinationFile: File) = try {
         if (destinationFile.exists()) {
-            viewModel.write("Found existing: $fileUrl")
+            viewModel.write("Use cached: $fileUrl")
         } else {
             viewModel.write("Download: $fileUrl")
             BufferedInputStream(URL(fileUrl).openStream()).use { input ->
@@ -212,16 +233,12 @@ class FTDIClient(
     }
 
     private fun prepareDisks() {
-        //val path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         val path = context.getExternalFilesDir(null);
 
-        val puyo =
-                "https://download.file-hunter.com/Games/MSX2/DSK/Puyo%20Puyo%20(en)%20(1991)%20(Compile).zip"
-        val aleste2 =
-                "https://download.file-hunter.com/Games/MSX2/DSK/Aleste%202%20(1988)(Compile)(en)(Disk2of3)(Woomb).zip"
+        val puyo = "https://download.file-hunter.com/Games/MSX2/DSK/Puyo%20Puyo%20(en)%20(1991)%20(Compile).zip"
+        val aleste2 = "https://download.file-hunter.com/Games/MSX2/DSK/Aleste%202%20(1988)(Compile)(en)(Disk2of3)(Woomb).zip"
         downloadFile(puyo, File(path, "puyo.zip"))
         downloadFile(aleste2, File(path, "aleste2.zip"))
-
         showzip(File(path, "puyo.zip"))
         showzip(File(path, "aleste2.zip"))
     }
@@ -272,6 +289,3 @@ class FTDIClient(
     }
 
 }
-
-
-
