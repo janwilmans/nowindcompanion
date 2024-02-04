@@ -25,6 +25,17 @@ public enum class DetectedNowindVersion {
     }
 }
 
+public enum class MsxVersion(val value: Int) {
+    One(0),
+    Two(1),
+    TwoPlus(2),
+    TurboR(3);
+}
+
+public fun toMsxVersionEnum(value: Int): MsxVersion? {
+    return enumValues<MsxVersion>().find { it.value == value }
+}
+
 public enum class NowindCommand(val value: Int) {
     DSKIO(0x80),
     DSKCHG(0x81),
@@ -52,6 +63,11 @@ public enum class NowindCommand(val value: Int) {
     COMMAND(0x97),
     STDOUT(0x98)
 }
+
+public fun toCommandEnum(value: Int): NowindCommand? {
+    return enumValues<NowindCommand>().find { it.value == value }
+}
+
 
 class NowindViewModel(
     private val savedStateHandle: SavedStateHandle

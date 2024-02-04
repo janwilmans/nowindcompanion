@@ -5,9 +5,13 @@ import java.io.IOException
 import java.util.LinkedList
 import java.util.concurrent.TimeoutException
 
-class Queue(
+class CommandQueue(
     private val queue: LinkedList<Int> = LinkedList<Int>()
 ) {
+
+    override fun toString(): String {
+        return toHexString(queue)
+    }
 
     private var startOfTimeout = System.currentTimeMillis()
     public fun restartTimeout() {
@@ -25,7 +29,11 @@ class Queue(
         }
     }
 
-    public suspend fun add(data: ByteArray) {
+    fun clear() {
+        queue.clear()
+    }
+
+    suspend fun add(data: ByteArray) {
         for (value in data) {
             queue.add(value.toInt() and 0xff)
         }
@@ -50,24 +58,36 @@ class Queue(
         val first = values[0]
         val remaining = values.subList(1, values.size)
         while (true) {
-            checkTimeout()
             val readValue: Int? = queue.poll()
             if (readValue != null && readValue == first)
                 break
             yield()
         }
         // first value was found, now assume sequential values are an exact match
+        restartTimeout()
         for (value in remaining) {
             val readValue: Int? = queue.poll()
             if (readValue == null || readValue != value) {
                 println("Nowind protocol error, sequence after %X not matched".format(first))
                 throw IOException("Nowind protocol error, sequence after %X not matched".format(first))
             }
+            checkTimeout()
             yield()
         }
     }
 
     public suspend fun waitForBytes(size: Int) {
+        while (true) {
+            if (queue.size == size) {
+                return
+            }
+            checkTimeout()
+            yield()
+        }
+    }
+
+
+    public suspend fun waitForBytes2(size: Int) {
         while (true) {
             if (queue.size >= size) {
                 return

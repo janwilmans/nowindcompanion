@@ -13,20 +13,16 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
-import java.lang.Integer.*
 import java.net.URL
 import java.nio.ByteBuffer
-import java.util.LinkedList
 import java.util.concurrent.TimeoutException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
-import kotlin.random.Random
 
 
 class DeviceInfo(val version: DetectedNowindVersion = DetectedNowindVersion.None) {
@@ -41,23 +37,24 @@ class FTDIClient(
     private var ftD2xx: D2xxManager = D2xxManager.getInstance(context)
 ) : FTDI_Interface {
 
-    public enum class HostState {
+    enum class HostState {
         Searching,
         Idle,
         Reading,
         Writing,
     }
 
-    private val readQueue = Queue()  // Host << MSX
+    private val commandQueue = CommandQueue()    // Host << MSX
+    private val responseQueue = ResponseQueue()  // Host >> MSX
 
-    private fun getDeviceInfo(node: D2xxManager.FtDeviceInfoListNode): DeviceInfo {
+    private fun getDeviceInfo(node: FtDeviceInfoListNode): DeviceInfo {
         val info = DeviceInfo(DetectedNowindVersion.V2)
         info.serial = node.serialNumber.toString()
         info.description = node.description.toString()
         return info
     }
 
-    private fun getDeviceInfoOpt(node: D2xxManager.FtDeviceInfoListNode?): DeviceInfo {
+    private fun getDeviceInfoOpt(node: FtDeviceInfoListNode?): DeviceInfo {
         if (node == null) {
             return DeviceInfo()
         }
@@ -68,7 +65,7 @@ class FTDIClient(
         return context.packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)
     }
 
-    private fun wait_for_device_present(): DeviceInfo {
+    private fun waitForDevicePresent(): DeviceInfo {
         if (hasOTGFeature(context)) {
             viewModel.write("OTG Supported!")
         } else {
@@ -79,7 +76,7 @@ class FTDIClient(
         while (true) {
             try {
                 viewModel.setReading(true)
-                var numberOfDevices = ftD2xx.createDeviceInfoList(context)
+                val numberOfDevices = ftD2xx.createDeviceInfoList(context)
                 val deviceList = arrayOfNulls<FtDeviceInfoListNode>(numberOfDevices)
                 ftD2xx.getDeviceInfoList(numberOfDevices, deviceList)
                 if (foundDevices != numberOfDevices) {
@@ -100,34 +97,23 @@ class FTDIClient(
         }
     }
 
-    fun hexString(bytes: ByteArray): String {
-        val hexArray = "0123456789ABCDEF".toCharArray()
-        val hexChars = CharArray(bytes.size * 2)
-        for (i in bytes.indices) {
-            val v = bytes[i].toInt() and 0xFF
-            hexChars[i * 2] = hexArray[v ushr 4]
-            hexChars[i * 2 + 1] = hexArray[v and 0x0F]
-        }
-        return String(hexChars)
-    }
 
     private suspend fun host() {
 
-        val device = ftD2xx.openByIndex(context, 0)
-        if (device == null || !device.isOpen) {
+        val ftdiDevice = ftD2xx.openByIndex(context, 0)
+        if (ftdiDevice == null || !ftdiDevice.isOpen) {
             viewModel.write("Error opening device at index 0!")
             delay(2000)
             return
         }
-        device.setLatencyTimer(16.toByte())
+        ftdiDevice.setLatencyTimer(16.toByte())
         val readAndWriteBuffer = 3.toByte()
-        device.purge(readAndWriteBuffer)
-        val readTimeout: Int = device.readTimeout
+        ftdiDevice.purge(readAndWriteBuffer)
+        val readTimeout: Int = ftdiDevice.readTimeout
         viewModel.write("readTimeout: ${readTimeout}ms")
-
         viewModel.write("Start hosting...")
         while (true) {
-            val receivedBytes = device.queueStatus
+            val receivedBytes = ftdiDevice.queueStatus
             if (receivedBytes == -1) // we lost the connection
             {
                 return
@@ -135,21 +121,23 @@ class FTDIClient(
             try {
                 if (receivedBytes > 0) {
                     val data = ByteArray(receivedBytes)
-                    device.read(data)
-                    readQueue.add(data)
-                    readHandler(readQueue)
+                    ftdiDevice.read(data)
+                    commandQueue.add(data)
+                    readHandler(commandQueue)
                     continue
                 }
                 delay(250)
             } catch (e: Exception) {
                 when (e) {
                     is TimeoutException -> {
-                        println("nowind command timed out, %d bytes remaining in queue.".format(readQueue.size()))
+                        println("nowind command timed out, %d bytes remaining in queue.".format(commandQueue.size()))
+                        commandQueue.clear()
                         // ignored intentionally
                     }
 
                     is IOException -> {
-                        println("nowind command de-sync, %d bytes remaining in queue.".format(readQueue.size()))
+                        println("nowind command de-sync, %d bytes remaining in queue.".format(commandQueue.size()))
+                        commandQueue.clear()
                         // ignored intentionally
 
                     }
@@ -169,32 +157,25 @@ class FTDIClient(
 //    AF05 00 00 2F FD 02 76 7C C9 86 (11) // NowindCommand::INIENV
 //    AA55 FFFF (4)                        // RAM Detection?
 
+    private suspend fun readHandler(commandQueue: CommandQueue) {
 
-    private fun commandToEnum(byteValue: Int): NowindCommand? {
-        return enumValues<NowindCommand>().find { it.value == byteValue }
+        val size = commandQueue.size()
+        println("readHandler, $size bytes: $commandQueue")
+        commandQueue.waitFor(listOf(0xAF, 0x05))
+        commandQueue.waitForBytes(9)
+
+        val bc = commandQueue.readWord()
+        val de = commandQueue.readWord()
+        val hl = commandQueue.readWord()
+        val f = commandQueue.readByte()
+        val a = commandQueue.readByte()
+        val cmd = commandQueue.readByte()
+        handleCommand(Command(bc, de, hl, f, a, cmd))
     }
 
-    private suspend fun readHandler(queue: Queue) {
-
-        println("readHandler, %d bytes".format(queue.size()))
-        queue.restartTimeout()
-        queue.waitFor(listOf(0xAF, 0x05))
-        queue.waitForBytes(9)
-
-        val bc = queue.readWord()
-        val de = queue.readWord()
-        val hl = queue.readWord()
-        val f = queue.readByte()
-        val a = queue.readByte()
-        val cmd = queue.readByte()
-        handleCommand(cmd, bc, de, hl, f, a)
-    }
-
-    private fun handleCommand(cmd: Int, bc: Int, de: Int, hl: Int, f: Int, a: Int) {
-
-        val commandName = commandToEnum(cmd)?.name ?: "unknown"
-        viewModel.write("$commandName (%H) BC=%04X, DE=%04X, HL=%04X, F=%X, A=%X".format(cmd, bc, de, hl, f, a))
-        when (commandToEnum(cmd)) {
+    private fun handleCommand(command: Command) {
+        viewModel.write("$command")
+        when (command.toEnum()) {
             NowindCommand.DSKIO -> TODO()
             NowindCommand.DSKCHG -> TODO()
             NowindCommand.GETDPB -> TODO()
@@ -213,9 +194,28 @@ class FTDIClient(
             NowindCommand.AUXOUT -> TODO()
             NowindCommand.MESSAGE -> TODO()
             NowindCommand.CHANGEIMAGE -> TODO()
-            NowindCommand.GETDOSVERSION -> TODO()
+            NowindCommand.GETDOSVERSION -> {
+                val msxIdByte = command.a // MSX version number, 0=MSX1, 1=MSX2, 2=MSX2+, 3=MSX Turbo R
+
+                // send back header + "1" to enable DOS1 and "2" to enable DOS2
+                // while this might be a configuration option, it makes sense to enable DOS2 only on MSX2
+                // (because DOS2 is build-in in MSX Turbo R)
+                responseQueue.addHeader()
+                if (msxIdByte == MsxVersion.Two.value) {
+                    responseQueue.add(2)
+                } else {
+                    responseQueue.add(1)
+                }
+            }
+
+            // the MSX asks whether the host has a command waiting for it to execute
             NowindCommand.CMDREQUEST -> {
-                println("- CMD REQUESTED")
+                val commandId = command.getB()
+                val commandArgument = command.getC()
+                println("- CMD REQUESTED: %X with argument %X".format(commandId, commandArgument))
+
+                responseQueue.addHeader()
+                responseQueue.add(0) // no more commands / not implemented
             }
 
             NowindCommand.BLOCKREAD -> TODO()
@@ -223,7 +223,7 @@ class FTDIClient(
             NowindCommand.CPUINFO -> TODO()
             NowindCommand.COMMAND -> TODO()
             NowindCommand.STDOUT -> TODO()
-            null -> println("* unknown command: %X ignored".format(cmd))
+            null -> println("* unknown command: %X ignored".format(command.cmd))
         }
     }
 
@@ -269,7 +269,7 @@ class FTDIClient(
     }
 
     private fun prepareDisks() {
-        val path = context.getExternalFilesDir(null);
+        val path = context.getExternalFilesDir(null)
 
         val puyo = "https://download.file-hunter.com/Games/MSX2/DSK/Puyo%20Puyo%20(en)%20(1991)%20(Compile).zip"
         val aleste2 = "https://download.file-hunter.com/Games/MSX2/DSK/Aleste%202%20(1988)(Compile)(en)(Disk2of3)(Woomb).zip"
@@ -293,7 +293,7 @@ class FTDIClient(
         GlobalScope.launch(Dispatchers.Default) {
 
             while (true) {
-                wait_for_device_present()
+                waitForDevicePresent()
                 host()
                 viewModel.write("nowind disconnected!")
             }
