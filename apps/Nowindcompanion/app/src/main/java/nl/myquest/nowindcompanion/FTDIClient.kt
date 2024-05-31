@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -24,6 +25,7 @@ import java.util.concurrent.TimeoutException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
+const val HARDCODED_READ_DATABLOCK_SIZE = 128
 
 class DeviceInfo(val version: DetectedNowindVersion = DetectedNowindVersion.None) {
     var serial: String = ""
@@ -46,6 +48,19 @@ class FTDIClient(
 
     private val commandQueue = CommandQueue()    // Host << MSX
     private val responseQueue = ResponseQueue()  // Host >> MSX
+
+    private var diskimage: ByteArray = ByteArray(1024 * 1024)
+
+    fun readDisk(diskData: ByteArray, position: Int, size: Int): List<Int> {
+        require(position >= 0 && position < diskData.size) { "Invalid position" }
+        require(size >= 0 && position + size <= diskData.size) { "Invalid size or exceeds disk size" }
+
+        val result = mutableListOf<Int>()
+        for (i in position until position + size) {
+            result.add(diskData[i].toInt() and 0xFF)
+        }
+        return result
+    }
 
     private fun getDeviceInfo(node: FtDeviceInfoListNode): DeviceInfo {
         val info = DeviceInfo(DetectedNowindVersion.V2)
@@ -124,13 +139,18 @@ class FTDIClient(
                     ftdiDevice.read(data)
                     commandQueue.add(data)
                     readHandler(commandQueue)
+                    val response = responseQueue.GetResponse()
+                    println("response: %s".format(toHexString(response)))
+                    ftdiDevice.write(response)
+
                     continue
                 }
                 delay(250)
             } catch (e: Exception) {
                 when (e) {
                     is TimeoutException -> {
-                        println("nowind command timed out, %d bytes remaining in queue.".format(commandQueue.size()))
+                        val message = e.message
+                        println("$message, %d bytes remaining in queue.".format(commandQueue.size()))
                         commandQueue.clear()
                         // ignored intentionally
                     }
@@ -176,13 +196,65 @@ class FTDIClient(
     private fun handleCommand(command: Command) {
         viewModel.write("$command")
         when (command.toEnum()) {
-            NowindCommand.DSKIO -> TODO()
+            NowindCommand.DSKIO -> {
+
+                beep();
+
+                // no response is legal and will cause a 'Disk Offline' to occur on the MSX
+                // for example, this would be expected when a disk number is requested that is unknown
+                if (command.f and 1 == 1)   // CF (Carry Flag) means "Write" if set and "Read" when not set.
+                {
+                    println("Writing not implemented!")
+                    return
+                }
+
+                // DSKIO read
+
+                val sectorAmount = command.getB()
+                val size = sectorAmount * 512
+                val address = command.getDestinationAddress();
+                var sector = command.getStartSector()
+                val diskimageReadPosition = sector * 512;
+                val data = readDisk(diskimage, diskimageReadPosition, diskimageReadPosition + size)
+
+                if (size < HARDCODED_READ_DATABLOCK_SIZE) {
+                    // just 1 slow block
+                    responseQueue.addHeader()
+                    responseQueue.add(BlockRead.SLOWTRANSFER.value)
+                    responseQueue.add16(address)
+                    responseQueue.add16(size)
+                    responseQueue.addBlock(data)
+                } else {
+                    // fast blocks
+                    val blockAmount = size / HARDCODED_READ_DATABLOCK_SIZE
+
+
+                }
+
+
+                // send DATABLOCK
+                //responseQueue.addBlock()
+
+            }
+
             NowindCommand.DSKCHG -> TODO()
             NowindCommand.GETDPB -> TODO()
             NowindCommand.CHOICE -> TODO()
             NowindCommand.DSKFMT -> TODO()
-            NowindCommand.DRIVES -> TODO()
-            NowindCommand.INIENV -> TODO()
+            NowindCommand.DRIVES -> {
+                responseQueue.addHeader()
+                responseQueue.add(0);  // 0 = no phantom drive, 2 = enable phantom drive(s)
+                val allowOtherDiskroms = 0x80; // 0 = disabled, 0x80 = initialize more disk roms
+                responseQueue.add(command.a or allowOtherDiskroms)
+                val numberOfDrives = 1
+                responseQueue.add(numberOfDrives)
+            }
+
+            NowindCommand.INIENV -> {
+                responseQueue.addHeader()
+                responseQueue.add(255); // index of romdisk (255 = no romdisk)
+            }
+
             NowindCommand.GETDATE -> TODO()
             NowindCommand.DEVICEOPEN -> TODO()
             NowindCommand.DEVICECLOSE -> TODO()
@@ -225,6 +297,8 @@ class FTDIClient(
             NowindCommand.STDOUT -> TODO()
             null -> println("* unknown command: %X ignored".format(command.cmd))
         }
+
+
     }
 
     private fun downloadFile(fileUrl: String, destinationFile: File) = try {
@@ -246,6 +320,41 @@ class FTDIClient(
 
     } catch (e: Exception) {
         println("### Exception: $e")
+    }
+
+
+    private fun load(zipFile: File) {
+        if (!zipFile.exists()) {
+            viewModel.write("File not found!")
+            return
+        }
+        val inputStream = FileInputStream(zipFile)
+        val zipInputStream = ZipInputStream(inputStream)
+
+        var firstDiskLoaded = false
+
+        var entry: ZipEntry? = zipInputStream.nextEntry
+        while (entry != null) {
+            val entryName = entry.name
+
+            if (firstDiskLoaded) {
+                viewModel.write("Skipping: $entryName")
+            } else {
+                viewModel.write("Loading: $entryName")
+
+                val byteArrayOutputStream = ByteArrayOutputStream()
+                val buffer = ByteArray(1024)
+                var len: Int
+                while (zipInputStream.read(buffer).also { len = it } > 0) {
+                    byteArrayOutputStream.write(buffer, 0, len)
+                }
+                diskimage = byteArrayOutputStream.toByteArray()
+                firstDiskLoaded = true
+            }
+            entry = zipInputStream.nextEntry
+        }
+        zipInputStream.close()
+        inputStream.close()
     }
 
     private fun showzip(zipFile: File) {
@@ -271,12 +380,13 @@ class FTDIClient(
     private fun prepareDisks() {
         val path = context.getExternalFilesDir(null)
 
-        val puyo = "https://download.file-hunter.com/Games/MSX2/DSK/Puyo%20Puyo%20(en)%20(1991)%20(Compile).zip"
+        //val puyo = "https://download.file-hunter.com/Games/MSX2/DSK/Puyo%20Puyo%20(en)%20(1991)%20(Compile).zip"
         val aleste2 = "https://download.file-hunter.com/Games/MSX2/DSK/Aleste%202%20(1988)(Compile)(en)(Disk2of3)(Woomb).zip"
-        downloadFile(puyo, File(path, "puyo.zip"))
+        //downloadFile(puyo, File(path, "puyo.zip"))
         downloadFile(aleste2, File(path, "aleste2.zip"))
-        showzip(File(path, "puyo.zip"))
-        showzip(File(path, "aleste2.zip"))
+        //showzip(File(path, "puyo.zip"))
+        //showzip(File(path, "aleste2.zip"))
+        load(File(path, "aleste2.zip"))
     }
 
     init {

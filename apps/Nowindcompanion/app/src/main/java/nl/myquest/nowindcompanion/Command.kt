@@ -42,4 +42,18 @@ class Command(val bc: Int, val de: Int, val hl: Int, val f: Int, val a: Int, val
     fun toEnum(): NowindCommand? {
         return toCommandEnum(cmd)
     }
+
+    fun getStartSector(): Int {
+        var sector = de
+        if (getC() < 0x80) {
+            val highPart = (getC() shl 16)
+            sector += highPart
+        }
+        return sector
+    }
+
+    fun getDestinationAddress(): Int {
+        return hl
+    }
+
 }

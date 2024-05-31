@@ -1,7 +1,6 @@
 package nl.myquest.nowindcompanion
 
 import kotlinx.coroutines.yield
-import java.io.IOException
 import java.util.LinkedList
 import java.util.concurrent.TimeoutException
 
@@ -14,18 +13,22 @@ class CommandQueue(
     }
 
     private var startOfTimeout = System.currentTimeMillis()
-    public fun restartTimeout() {
+    fun restartTimeout() {
         startOfTimeout = System.currentTimeMillis()
     }
 
-    public fun timeoutExipired(): Boolean {
+    private fun ReadTimeout(): Int {
+        return 200
+    }
+
+    fun timeoutExipired(): Boolean {
         val duration = System.currentTimeMillis() - startOfTimeout
-        return duration > 200
+        return duration > ReadTimeout()
     }
 
     private fun checkTimeout() {
         if (timeoutExipired()) {
-            throw TimeoutException("Nowind protocol timeout after 200ms")
+            throw TimeoutException("Nowind protocol timeout after %dms".format(ReadTimeout()))
         }
     }
 
@@ -44,56 +47,66 @@ class CommandQueue(
         return queue.size
     }
 
-    public fun readByte(): Int {
+    fun readByte(): Int {
         return queue.pop()
     }
 
-    public fun readWord(): Int {
+    fun readWord(): Int {
         val low = queue.pop()
         return (queue.pop() * 256) + low
     }
 
-    public suspend fun waitFor(values: List<Int>) {
-        assert(values.isNotEmpty())
-        val first = values[0]
-        val remaining = values.subList(1, values.size)
+    suspend fun next(): Int {
         while (true) {
             val readValue: Int? = queue.poll()
-            if (readValue != null && readValue == first)
-                break
+            if (readValue != null) {
+                return readValue
+            }
+            checkTimeout()
             yield()
         }
-        // first value was found, now assume sequential values are an exact match
+    }
+
+    suspend fun waitFor(values: List<Int>) {
+        require(values.isNotEmpty())    // can throw IllegalArgumentException
         restartTimeout()
-        for (value in remaining) {
-            val readValue: Int? = queue.poll()
-            if (readValue == null || readValue != value) {
-                println("Nowind protocol error, sequence after %X not matched".format(first))
-                throw IOException("Nowind protocol error, sequence after %X not matched".format(first))
+        var discardedBytes = 0
+        try {
+            var index: Int = 0
+            while (index < values.size) {
+                //println("go for index %d for %X".format(index, values[index]))
+                var readValue: Int = next()
+                if (readValue == values[index]) {
+                    //println("match %X".format(readValue))
+                    index += 1
+                    continue
+                }
+
+                // if we get here, the sequence failed and we restart from the beginning
+                // and the current value has to be re-checked against the value at index 0
+                //println("restart for %X".format(readValue))
+                discardedBytes += (index + 1)
+                if (readValue == values[0]) {
+                    index = 1
+                } else {
+                    index = 0
+                }
             }
-            checkTimeout()
-            yield()
+            if (discardedBytes > 0) {
+                println("discarded $discardedBytes bytes.")
+            }
+        } catch (e: TimeoutException) {
+            throw TimeoutException(e.message + ", discarding $discardedBytes bytes")
         }
     }
 
-    public suspend fun waitForBytes(size: Int) {
-        while (true) {
-            if (queue.size == size) {
-                return
-            }
-            checkTimeout()
-            yield()
-        }
-    }
-
-
-    public suspend fun waitForBytes2(size: Int) {
+    suspend fun waitForBytes(size: Int) {
         while (true) {
             if (queue.size >= size) {
                 return
             } else {
                 if (queue.size > 0) {
-                    println("waitForBytes yielded at %d bytes.".format(queue.size))
+                    println("waitForBytes yielded at %d/%d bytes.".format(queue.size, size))
                 }
             }
             yield()

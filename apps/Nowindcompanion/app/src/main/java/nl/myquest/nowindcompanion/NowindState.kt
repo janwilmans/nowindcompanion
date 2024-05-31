@@ -7,7 +7,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-public enum class DetectedNowindVersion {
+enum class DetectedNowindVersion {
     None {
         override fun toString(): String {
             return "None"
@@ -25,18 +25,18 @@ public enum class DetectedNowindVersion {
     }
 }
 
-public enum class MsxVersion(val value: Int) {
+enum class MsxVersion(val value: Int) {
     One(0),
     Two(1),
     TwoPlus(2),
     TurboR(3);
 }
 
-public fun toMsxVersionEnum(value: Int): MsxVersion? {
+fun toMsxVersionEnum(value: Int): MsxVersion? {
     return enumValues<MsxVersion>().find { it.value == value }
 }
 
-public enum class NowindCommand(val value: Int) {
+enum class NowindCommand(val value: Int) {
     DSKIO(0x80),
     DSKCHG(0x81),
     GETDPB(0x82),
@@ -68,6 +68,13 @@ public fun toCommandEnum(value: Int): NowindCommand? {
     return enumValues<NowindCommand>().find { it.value == value }
 }
 
+enum class BlockRead(val value: Int) {
+    EXIT_MORE_DATE_AHEAD(0),
+    FASTTRANSFER(1),
+    SLOWTRANSFER(2),
+    EXIT(3),
+    ERROR(128)
+}
 
 class NowindViewModel(
     private val savedStateHandle: SavedStateHandle
