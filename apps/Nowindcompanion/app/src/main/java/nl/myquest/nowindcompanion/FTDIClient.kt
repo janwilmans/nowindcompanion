@@ -217,7 +217,10 @@ class FTDIClient(
                 val diskimageReadPosition = sector * 512;
                 val data = readDisk(diskimage, diskimageReadPosition, diskimageReadPosition + size)
 
+                println("DSKIO read transfer $sector to address $address, $sectorAmount sectors")
+
                 if (size < HARDCODED_READ_DATABLOCK_SIZE) {
+                    println(" schedule 1 slow block of size $size")
                     // just 1 slow block
                     responseQueue.addHeader()
                     responseQueue.add(BlockRead.SLOWTRANSFER.value)
@@ -225,19 +228,25 @@ class FTDIClient(
                     responseQueue.add16(size)
                     responseQueue.addBlock(data)
                 } else {
-                    // fast blocks
+                    // fast blocks are send in reverse order (end -> start)
                     val blockAmount = size / HARDCODED_READ_DATABLOCK_SIZE
+                    println(" schedule $blockAmount fast block(s)")
 
-
+                    responseQueue.addHeader()
+                    responseQueue.add(BlockRead.FASTTRANSFER.value)
+                    responseQueue.add16(address + size)
+                    responseQueue.add(blockAmount)
+                    responseQueue.addBlocks(data.reversed())
                 }
-
-
-                // send DATABLOCK
-                //responseQueue.addBlock()
 
             }
 
-            NowindCommand.DSKCHG -> TODO()
+            NowindCommand.DSKCHG -> {
+                responseQueue.addHeader()
+                responseQueue.add(0)    // Say nothing changed (incomplete implementation)
+                responseQueue.add(255)  // Dummy
+            }
+
             NowindCommand.GETDPB -> TODO()
             NowindCommand.CHOICE -> TODO()
             NowindCommand.DSKFMT -> TODO()
@@ -274,7 +283,10 @@ class FTDIClient(
                 // (because DOS2 is build-in in MSX Turbo R)
                 responseQueue.addHeader()
                 if (msxIdByte == MsxVersion.Two.value) {
-                    responseQueue.add(2)
+                    // 2 will enable dos2, but will disable it for now,
+                    // as games will not like dos2
+
+                    responseQueue.add(1)
                 } else {
                     responseQueue.add(1)
                 }

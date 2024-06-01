@@ -28,7 +28,7 @@ class ResponseQueue(
     }
 
     // the protocol relies on the block size being smaller then 255 bytes,
-    // because that means there is always an unused values in the block.
+    // because that means there is always an unused value in the block.
     private fun GetMarker(data: List<Int>): Int {
         require(data.size < 255)
         var occurring = BooleanArray(256)
@@ -45,9 +45,28 @@ class ResponseQueue(
 
     fun addBlock(data: List<Int>) {
         val marker = GetMarker(data)
+        println("  schedule block with marker $marker of size ${data.size}")
         add(marker)
         add(data)
         add(marker)
+    }
+
+    fun addBlocks(data: List<Int>) {
+        val blockSize = HARDCODED_READ_DATABLOCK_SIZE
+        var startIndex = 0
+
+        // Loop through the data list in chunks of blockSize
+        while (startIndex < data.size) {
+            // Calculate the end index for the current block, ensuring it doesn't exceed the list size
+            val endIndex = minOf(startIndex + blockSize, data.size)
+
+            // Create a sublist for the current block and pass it to addBlock
+            val block = data.subList(startIndex, endIndex)
+            addBlock(block)
+
+            // Move to the next block
+            startIndex = endIndex
+        }
     }
 
     fun add(data: List<Int>) {
