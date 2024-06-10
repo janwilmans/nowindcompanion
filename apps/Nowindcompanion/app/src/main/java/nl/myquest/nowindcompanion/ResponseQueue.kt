@@ -5,6 +5,7 @@ import java.io.IOException
 import java.lang.IllegalStateException
 import java.util.LinkedList
 
+
 class ResponseQueue(
     private val queue: LinkedList<Int> = LinkedList<Int>()
 ) {
@@ -27,34 +28,17 @@ class ResponseQueue(
         queue.add((value / 256) and 255)
     }
 
-    // the protocol relies on the block size being smaller then 255 bytes,
-    // because that means there is always an unused value in the block.
-    private fun GetMarker(data: List<Int>): Int {
-        require(data.size < 255)
-        var occurring = BooleanArray(256)
-        for (i in data) {
-            occurring[i] = true
-        }
-        for (i in occurring.indices) {
-            if (occurring[i] == false) {
-                return i;
-            }
-        }
-        throw IllegalStateException("GetMarker could not find unused marker")
+
+    fun addBlock(dataBlock: DataBlock) {
+        println("  schedule block with marker ${dataBlock.marker} of size ${dataBlock.data.size}")
+        add(dataBlock.marker)
+        add(dataBlock.data)
+        add(dataBlock.marker)
     }
 
-    fun addBlock(data: List<Int>) {
-        val marker = GetMarker(data)
-        println("  schedule block with marker $marker of size ${data.size}")
-        add(marker)
-        add(data)
-        add(marker)
-    }
-
-    fun addBlocks(data: List<Int>) {
-        val blockSize = HARDCODED_READ_DATABLOCK_SIZE
+    fun addBlocks(data: List<Int>, blockSize: Int): Int {
         var startIndex = 0
-
+        var blocks = 0
         // Loop through the data list in chunks of blockSize
         while (startIndex < data.size) {
             // Calculate the end index for the current block, ensuring it doesn't exceed the list size
@@ -62,11 +46,12 @@ class ResponseQueue(
 
             // Create a sublist for the current block and pass it to addBlock
             val block = data.subList(startIndex, endIndex)
-            addBlock(block)
-
+            addBlock(DataBlock(block))
+            blocks += 1
             // Move to the next block
             startIndex = endIndex
         }
+        return blocks
     }
 
     fun add(data: List<Int>) {

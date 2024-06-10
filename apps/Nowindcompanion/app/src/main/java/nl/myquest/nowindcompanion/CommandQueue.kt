@@ -101,13 +101,16 @@ class CommandQueue(
     }
 
     suspend fun waitForBytes(size: Int) {
+        var lastYieldSize = -1
         while (true) {
             if (queue.size >= size) {
+                println("waitForBytes returned immediately with ${size} bytes.")
                 return
-            } else {
-                if (queue.size > 0) {
-                    println("waitForBytes yielded at %d/%d bytes.".format(queue.size, size))
-                }
+            }
+
+            if (queue.size != lastYieldSize) {
+                println("waitForBytes yielded at ${queue.size}/${size} bytes.")
+                lastYieldSize = queue.size
             }
             yield()
         }

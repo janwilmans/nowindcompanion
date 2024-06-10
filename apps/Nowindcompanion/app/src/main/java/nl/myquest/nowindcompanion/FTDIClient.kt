@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -26,6 +27,28 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
 const val HARDCODED_READ_DATABLOCK_SIZE = 128
+
+// install https://plugins.jetbrains.com/plugin/7017-plantuml-integration
+// to view
+/*
+@startuml
+ComponentActivity <|-- MainActivity
+MainActivity -> NowindViewModel
+MainActivity -> FTDIClient
+NowindViewModel -d-> HomeScreen
+NowindViewModel -d-> SettingScreen
+NowindViewModel -d-> DebugScreen
+FTDIClient -- NowindViewModel
+FTDIClient -d-* CommandQueue
+FTDIClient -d-* ResponseQueue
+FTDIClient --* diskimage
+FTDIClient : waitForDevicePresent()
+FTDIClient : host()
+@enduml
+*/
+
+// https://www.amazon.nl/USB-OTG-Oplaadpoort-Compatibel-Chromecast/dp/B0B5MPCJF5/ref=asc_df_B08C5FWQND/?tag=nlshogostdde-21&linkCode=df0&hvadid=624714333587&hvpos=&hvnetw=g&hvrand=3005483864684403508&hvpone=&hvptwo=&hvqmt=&hvdev=c&hvdvcmdl=&hvlocint=&hvlocphy=9064064&hvtargid=pla-969368052238&mcid=eee95ed571413bc8b618785591a38bd9&th=1
+
 
 class DeviceInfo(val version: DetectedNowindVersion = DetectedNowindVersion.None) {
     var serial: String = ""
@@ -193,16 +216,16 @@ class FTDIClient(
         handleCommand(Command(bc, de, hl, f, a, cmd))
     }
 
-    private fun handleCommand(command: Command) {
+    private suspend fun handleCommand(command: Command) {
         viewModel.write("$command")
         when (command.toEnum()) {
             NowindCommand.DSKIO -> {
 
-                beep();
+                io_beep();
 
                 // no response is legal and will cause a 'Disk Offline' to occur on the MSX
                 // for example, this would be expected when a disk number is requested that is unknown
-                if (command.f and 1 == 1)   // CF (Carry Flag) means "Write" if set and "Read" when not set.
+                if ((command.f and 1) == 1)   // CF (Carry Flag) means "Write" if set and "Read" when not set.
                 {
                     println("Writing not implemented!")
                     return
@@ -216,8 +239,9 @@ class FTDIClient(
                 var sector = command.getStartSector()
                 val diskimageReadPosition = sector * 512;
                 val data = readDisk(diskimage, diskimageReadPosition, diskimageReadPosition + size)
+                //ReadOperation(address, data).execute()
 
-                println("DSKIO read transfer $sector to address $address, $sectorAmount sectors")
+                println("DSKIO read transfer sector $sector to address ${String.format("0x%04X", address)}, $sectorAmount sectors")
 
                 if (size < HARDCODED_READ_DATABLOCK_SIZE) {
                     println(" schedule 1 slow block of size $size")
@@ -226,7 +250,7 @@ class FTDIClient(
                     responseQueue.add(BlockRead.SLOWTRANSFER.value)
                     responseQueue.add16(address)
                     responseQueue.add16(size)
-                    responseQueue.addBlock(data)
+                    responseQueue.addBlock(DataBlock(data))
                 } else {
                     // fast blocks are send in reverse order (end -> start)
                     val blockAmount = size / HARDCODED_READ_DATABLOCK_SIZE
@@ -236,7 +260,14 @@ class FTDIClient(
                     responseQueue.add(BlockRead.FASTTRANSFER.value)
                     responseQueue.add16(address + size)
                     responseQueue.add(blockAmount)
-                    responseQueue.addBlocks(data.reversed())
+                    val blocks = responseQueue.addBlocks(data.reversed(), HARDCODED_READ_DATABLOCK_SIZE)
+                    println(" schedule $blockAmount fast block(s) done")
+
+//                    commandQueue.waitForBytes(blocks);
+//                    repeat(blocks)
+//                    {
+//                        commandQueue.readByte()
+//                    }
                 }
 
             }
@@ -283,9 +314,8 @@ class FTDIClient(
                 // (because DOS2 is build-in in MSX Turbo R)
                 responseQueue.addHeader()
                 if (msxIdByte == MsxVersion.Two.value) {
-                    // 2 will enable dos2, but will disable it for now,
-                    // as games will not like dos2
-
+                    // 2 will enable dos2, but we will disable it for now,
+                    // as games will not like dos2 and we have no option to turn it off yet
                     responseQueue.add(1)
                 } else {
                     responseQueue.add(1)
