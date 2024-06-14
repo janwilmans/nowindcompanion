@@ -18,7 +18,7 @@ class CommandQueue(
     }
 
     private fun ReadTimeout(): Int {
-        return 200
+        return 20
     }
 
     fun timeoutExipired(): Boolean {
@@ -32,15 +32,18 @@ class CommandQueue(
         }
     }
 
+    fun isEmpty(): Boolean {
+        return queue.isEmpty()
+    }
+
     fun clear() {
         queue.clear()
     }
 
-    suspend fun add(data: ByteArray) {
+    fun add(data: ByteArray) {
         for (value in data) {
             queue.add(value.toInt() and 0xff)
         }
-        yield()
     }
 
     public fun size(): Int {
@@ -63,6 +66,7 @@ class CommandQueue(
                 return readValue
             }
             checkTimeout()
+            println("next yielded...")
             yield()
         }
     }
@@ -98,13 +102,14 @@ class CommandQueue(
         } catch (e: TimeoutException) {
             throw TimeoutException(e.message + ", discarding $discardedBytes bytes")
         }
+        println("waitFor ${values} returned...")
     }
 
     suspend fun waitForBytes(size: Int) {
         var lastYieldSize = -1
         while (true) {
             if (queue.size >= size) {
-                println("waitForBytes returned immediately with ${size} bytes.")
+                println("waitForBytes returned immediately with ${size} bytes: ${queue}")
                 return
             }
 

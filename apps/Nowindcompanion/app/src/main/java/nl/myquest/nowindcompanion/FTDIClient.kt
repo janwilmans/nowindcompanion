@@ -2,16 +2,19 @@ package nl.myquest.nowindcompanion
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.util.Log
 import com.ftdi.j2xx.D2xxManager
 import com.ftdi.j2xx.D2xxManager.FtDeviceInfoListNode
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.newSingleThreadContext
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import java.io.BufferedInputStream
@@ -134,14 +137,49 @@ class FTDIClient(
             Thread.sleep(500)
         }
     }
+//
+//    private suspend fun first_level2() {
+//        println("first_level2 entry")
+//        while (true) {
+//            println("first_level2 loop, threadid: '${Thread.currentThread().getId()}'")
+//            yield();
+//        }
+//    }
+//
+//    private suspend fun first() {
+//        println("first () entry, threadid: '${Thread.currentThread().getId()}'")
+//        first_level2();
+//    }
+//
+//
+//    private suspend fun second_level2() {
+//        println("second_level2 () entry")
+//        while (true) {
+//            println("second_level2 loop, threadid: '${Thread.currentThread().getId()}'")
+//            yield();
+//        }
+//    }
+//
+//    private suspend fun second() {
+//        println("second() entry, threadid: '${Thread.currentThread().getId()}'")
+//        second_level2()
+//    }
+//
+//    private fun host_example() = runBlocking {
+//        val job1 = async { first() }
+//        val job2 = async { second() }
+//        while (true) {
+//            job1.await();
+//            job2.await();
+//        }
+//    }
 
-
-    private suspend fun host() {
+    private suspend fun run_ftdi_io() {
 
         val ftdiDevice = ftD2xx.openByIndex(context, 0)
         if (ftdiDevice == null || !ftdiDevice.isOpen) {
             viewModel.write("Error opening device at index 0!")
-            delay(2000)
+            Thread.sleep(2000)
             return
         }
         ftdiDevice.setLatencyTimer(16.toByte())
@@ -154,41 +192,45 @@ class FTDIClient(
             val receivedBytes = ftdiDevice.queueStatus
             if (receivedBytes == -1) // we lost the connection
             {
+                println("receivedBytes -1, connection lost...")
                 return
             }
+            //println("poll.. queueStatus...")
+            if (receivedBytes == 0) {
+                // delay would release control to 'readHandler' but we want to actually do nothing.
+                Thread.sleep(250)
+                continue
+            }
+
             try {
-                if (receivedBytes > 0) {
-                    val data = ByteArray(receivedBytes)
-                    ftdiDevice.read(data)
-                    commandQueue.add(data)
-                    readHandler(commandQueue)
-                    val response = responseQueue.GetResponse()
-                    println("response: %s".format(toHexString(response)))
-                    ftdiDevice.write(response)
+                //println("receivedBytes: ${receivedBytes}")
+                val data = ByteArray(receivedBytes)
+                ftdiDevice.read(data)
+                commandQueue.add(data)
 
-                    continue
-                }
-                delay(250)
+                // yield to handle the commandQueue (effectively switching to 'readHandler')
+                yield()
+
+                val response = responseQueue.GetResponse()
+                println("response: %s".format(toHexString(response)))
+                ftdiDevice.write(response)
+
             } catch (e: Exception) {
-                when (e) {
-                    is TimeoutException -> {
-                        val message = e.message
-                        println("$message, %d bytes remaining in queue.".format(commandQueue.size()))
-                        commandQueue.clear()
-                        // ignored intentionally
-                    }
-
-                    is IOException -> {
-                        println("nowind command de-sync, %d bytes remaining in queue.".format(commandQueue.size()))
-                        commandQueue.clear()
-                        // ignored intentionally
-
-                    }
-
-                    else -> throw e
-                }
+                Log.e("Nowind", "run_ftdi_io exception: ${e.message}")
             }
         }
+    }
+
+    private fun host() = runBlocking {
+
+        var running = true
+        val handler_job = async {
+            while (running) {
+                readHandler(commandQueue); }
+        }
+        run_ftdi_io();
+        running = false
+        handler_job.await();
     }
 
 // received at boot:
@@ -202,18 +244,40 @@ class FTDIClient(
 
     private suspend fun readHandler(commandQueue: CommandQueue) {
 
-        val size = commandQueue.size()
-        println("readHandler, $size bytes: $commandQueue")
-        commandQueue.waitFor(listOf(0xAF, 0x05))
-        commandQueue.waitForBytes(9)
+        while (commandQueue.isEmpty()) yield()
 
-        val bc = commandQueue.readWord()
-        val de = commandQueue.readWord()
-        val hl = commandQueue.readWord()
-        val f = commandQueue.readByte()
-        val a = commandQueue.readByte()
-        val cmd = commandQueue.readByte()
-        handleCommand(Command(bc, de, hl, f, a, cmd))
+        val size = commandQueue.size()
+        try {
+
+            println("readHandler, ${size} bytes: ${commandQueue}, threadid: '${Thread.currentThread().getId()}'")
+            commandQueue.waitFor(listOf(0xAF, 0x05))
+            commandQueue.waitForBytes(9)
+
+            val bc = commandQueue.readWord()
+            val de = commandQueue.readWord()
+            val hl = commandQueue.readWord()
+            val f = commandQueue.readByte()
+            val a = commandQueue.readByte()
+            val cmd = commandQueue.readByte()
+            handleCommand(Command(bc, de, hl, f, a, cmd))
+
+        } catch (e: Exception) {
+            when (e) {
+                is TimeoutException -> {
+                    Log.e("Nowind", "${e.message}, %d bytes remaining in queue were removed.".format(commandQueue.size()))
+                    commandQueue.clear()
+                    // ignored intentionally
+                }
+
+                is IOException -> {
+                    Log.e("Nowind", "Nowind command de-sync, %d bytes remaining in queue were removed.".format(commandQueue.size()))
+                    commandQueue.clear()
+                    // ignored intentionally
+                }
+
+                else -> throw e
+            }
+        }
     }
 
     private suspend fun handleCommand(command: Command) {
@@ -221,7 +285,7 @@ class FTDIClient(
         when (command.toEnum()) {
             NowindCommand.DSKIO -> {
 
-                io_beep();
+                //io_beep();
 
                 // no response is legal and will cause a 'Disk Offline' to occur on the MSX
                 // for example, this would be expected when a disk number is requested that is unknown
@@ -262,12 +326,14 @@ class FTDIClient(
                     responseQueue.add(blockAmount)
                     val blocks = responseQueue.addBlocks(data.reversed(), HARDCODED_READ_DATABLOCK_SIZE)
                     println(" schedule $blockAmount fast block(s) done")
+                    commandQueue.waitForBytes(blocks);
 
-//                    commandQueue.waitForBytes(blocks);
-//                    repeat(blocks)
-//                    {
-//                        commandQueue.readByte()
-//                    }
+                    println(" received ${blocks}")
+                    repeat(blocks)
+                    {
+                        println("  read...")
+                        commandQueue.readByte()
+                    }
                 }
 
             }
@@ -433,16 +499,13 @@ class FTDIClient(
 
     init {
 
-        GlobalScope.launch(newSingleThreadContext("DownloadThread"))
+        GlobalScope.launch(newSingleThreadContext("NowindThread"))
         {
             prepareDisks()
             withContext(Dispatchers.Main)
             {
                 viewModel.write("disks loaded...")
             }
-        }
-
-        GlobalScope.launch(Dispatchers.Default) {
 
             while (true) {
                 waitForDevicePresent()
