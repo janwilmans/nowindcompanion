@@ -334,6 +334,10 @@ class FTDIClient(
                         println("  read...")
                         commandQueue.readByte()
                     }
+
+                    // done
+                    responseQueue.addHeader()
+                    responseQueue.add(BlockRead.EXIT.value)
                 }
 
             }
