@@ -192,7 +192,7 @@ class FTDIClient(
             val receivedBytes = ftdiDevice.queueStatus
             if (receivedBytes == -1) // we lost the connection
             {
-                println("receivedBytes -1, connection lost...")
+                println("io: receivedBytes -1, connection lost...")
                 return
             }
             //println("poll.. queueStatus...")
@@ -212,7 +212,7 @@ class FTDIClient(
                 yield()
 
                 val response = responseQueue.GetResponse()
-                println("response: %s".format(toHexString(response)))
+                println("io: write response of ${response.size} bytes ${toHexString(response)}")
                 ftdiDevice.write(response)
 
             } catch (e: Exception) {
@@ -303,49 +303,56 @@ class FTDIClient(
                 var sector = command.getStartSector()
                 val diskimageReadPosition = sector * 512;
                 val data = readDisk(diskimage, diskimageReadPosition, diskimageReadPosition + size)
-                //ReadOperation(address, data).execute()
 
                 println("DSKIO read transfer sector $sector to address ${String.format("0x%04X", address)}, $sectorAmount sectors")
+                ReadOperation(address, data).execute(responseQueue, commandQueue)
 
-                if (size < HARDCODED_READ_DATABLOCK_SIZE) {
-                    println(" schedule 1 slow block of size $size")
-                    // just 1 slow block
-                    responseQueue.addHeader()
-                    responseQueue.add(BlockRead.SLOWTRANSFER.value)
-                    responseQueue.add16(address)
-                    responseQueue.add16(size)
-                    responseQueue.addBlock(DataBlock(data))
-                } else {
-                    // fast blocks are send in reverse order (end -> start)
-                    val blockAmount = size / HARDCODED_READ_DATABLOCK_SIZE
-                    println(" schedule $blockAmount fast block(s)")
-
-                    responseQueue.addHeader()
-                    responseQueue.add(BlockRead.FASTTRANSFER.value)
-                    responseQueue.add16(address + size)
-                    responseQueue.add(blockAmount)
-                    val blocks = responseQueue.addBlocks(data.reversed(), HARDCODED_READ_DATABLOCK_SIZE)
-                    println(" schedule $blockAmount fast block(s) done")
-                    commandQueue.waitForBytes(blocks);
-
-                    println(" received ${blocks}")
-                    repeat(blocks)
-                    {
-                        println("  read...")
-                        commandQueue.readByte()
-                    }
-
-                    // done
-                    responseQueue.addHeader()
-                    responseQueue.add(BlockRead.EXIT.value)
-                }
+//                if (size < HARDCODED_READ_DATABLOCK_SIZE) {
+//                    println(" schedule 1 slow block of size $size")
+//                    // just 1 slow block
+//                    responseQueue.addHeader()
+//                    responseQueue.add(BlockRead.SLOWTRANSFER.value)
+//                    responseQueue.add16(address)
+//                    responseQueue.add16(size)
+//                    responseQueue.addBlock(DataBlock(data))
+//                } else {
+//                    // fast blocks are send in reverse order (end -> start)
+//                    val blockAmount = size / HARDCODED_READ_DATABLOCK_SIZE
+//                    println(" schedule $blockAmount fast block(s)")
+//
+//                    responseQueue.addHeader()
+//                    responseQueue.add(BlockRead.FASTTRANSFER.value)
+//                    responseQueue.add16(address + size)
+//                    responseQueue.add(blockAmount)
+//                    val blocks = responseQueue.addBlocks(data.reversed(), HARDCODED_READ_DATABLOCK_SIZE)
+//                    println(" schedule $blockAmount fast block(s) done")
+//                    commandQueue.waitForBytes(blocks);
+//
+//                    println(" received ${blocks}")
+//                    repeat(blocks)
+//                    {
+//                        println("  read...")
+//                        commandQueue.readByte()
+//                    }
+//
+//                    // done
+//                    responseQueue.addHeader()
+//                    responseQueue.add(BlockRead.EXIT.value)
+//                }
 
             }
 
             NowindCommand.DSKCHG -> {
+                //responseQueue.addHeader()
+                //responseQueue.add(1)    // Say nothing changed (incomplete implementation)
+                //responseQueue.add(255)  // Dummy
+
                 responseQueue.addHeader()
-                responseQueue.add(0)    // Say nothing changed (incomplete implementation)
-                responseQueue.add(255)  // Dummy
+                responseQueue.add(255) // Say 'changed'
+                val data = readDisk(diskimage, 1, 1)
+                val mediaDescriptor = data.get(0)
+                println("DSKCHG returns mediaDescriptor ${mediaDescriptor}")
+                responseQueue.add(mediaDescriptor) // return media descriptor
             }
 
             NowindCommand.GETDPB -> TODO()

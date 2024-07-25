@@ -18,7 +18,7 @@ class CommandQueue(
     }
 
     private fun ReadTimeout(): Int {
-        return 20
+        return 200
     }
 
     fun timeoutExipired(): Boolean {
@@ -26,9 +26,9 @@ class CommandQueue(
         return duration > ReadTimeout()
     }
 
-    private fun checkTimeout() {
+    private fun checkTimeout(from: String) {
         if (timeoutExipired()) {
-            throw TimeoutException("Nowind protocol timeout after %dms".format(ReadTimeout()))
+            throw TimeoutException("Nowind protocol timeout (${from}) after %dms".format(ReadTimeout()))
         }
     }
 
@@ -65,7 +65,7 @@ class CommandQueue(
             if (readValue != null) {
                 return readValue
             }
-            checkTimeout()
+            checkTimeout("next")
             println("next yielded...")
             yield()
         }
@@ -97,7 +97,7 @@ class CommandQueue(
                 }
             }
             if (discardedBytes > 0) {
-                println("discarded $discardedBytes bytes.")
+                println("waitFor discarded $discardedBytes bytes.")
             }
         } catch (e: TimeoutException) {
             throw TimeoutException(e.message + ", discarding $discardedBytes bytes")

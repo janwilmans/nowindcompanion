@@ -69,7 +69,7 @@ public fun toCommandEnum(value: Int): NowindCommand? {
 }
 
 enum class BlockRead(val value: Int) {
-    EXIT_MORE_DATE_AHEAD(0),
+    EXIT_MORE_DATA_AHEAD(0),
     FASTTRANSFER(1),
     SLOWTRANSFER(2),
     EXIT(3),
