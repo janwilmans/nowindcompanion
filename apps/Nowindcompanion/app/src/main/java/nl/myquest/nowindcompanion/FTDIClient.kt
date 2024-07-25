@@ -302,7 +302,7 @@ class FTDIClient(
                 val address = command.getDestinationAddress();
                 var sector = command.getStartSector()
                 val diskimageReadPosition = sector * 512;
-                val data = readDisk(diskimage, diskimageReadPosition, diskimageReadPosition + size)
+                val data = readDisk(diskimage, diskimageReadPosition, size)
 
                 println("DSKIO read transfer sector $sector to address ${String.format("0x%04X", address)}, $sectorAmount sectors")
                 ReadOperation(address, data).execute(responseQueue, commandQueue)
