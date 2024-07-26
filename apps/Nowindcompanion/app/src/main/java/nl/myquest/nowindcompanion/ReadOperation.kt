@@ -42,6 +42,10 @@ class ReadOperation(val address: Int, data: List<Int>) {
             responseQueue.addHeader()
             responseQueue.add(BlockRead.FASTTRANSFER.value)
             responseQueue.add16(address + size)
+
+            // possibly wrong, 1 sector is send in 4 x 128 byte block, prefixed and postfixed by marker
+            // see "blockReadTranfer:" in common.asm
+
             responseQueue.add(blockAmount)
             responseQueue.addBlocks(block.data.reversed(), HARDCODED_READ_DATABLOCK_SIZE)
         }
@@ -66,6 +70,8 @@ class ReadOperation(val address: Int, data: List<Int>) {
         while (dataBlocks.size > 0) {
 
             for (block in dataBlocks) {
+                // possible: wrong: we should send block <M3> 3 <M3> <M2> 2 <M2> <M1> 1 <M1> <M0> 0 <M0> with 1 header,
+                // but now, a new header is send for every block
                 transfer(block, responseQueue)
             }
 

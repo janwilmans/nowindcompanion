@@ -66,7 +66,7 @@ class CommandQueue(
                 return readValue
             }
             checkTimeout("next")
-            println("next yielded...")
+            //println("next yielded...")
             yield()
         }
     }
@@ -102,19 +102,19 @@ class CommandQueue(
         } catch (e: TimeoutException) {
             throw TimeoutException(e.message + ", discarding $discardedBytes bytes")
         }
-        println("waitFor ${values} returned...")
+        //println("waitFor ${values} returned...")
     }
 
     suspend fun waitForBytes(size: Int) {
         var lastYieldSize = -1
         while (true) {
             if (queue.size >= size) {
-                println("waitForBytes returned immediately with ${size} bytes: ${queue}")
+                //println("waitForBytes returned immediately with ${size} bytes: ${queue}")
                 return
             }
 
             if (queue.size != lastYieldSize) {
-                println("waitForBytes yielded at ${queue.size}/${size} bytes.")
+                //println("waitForBytes yielded at ${queue.size}/${size} bytes.")
                 lastYieldSize = queue.size
             }
             yield()

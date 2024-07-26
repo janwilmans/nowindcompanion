@@ -212,7 +212,7 @@ class FTDIClient(
                 yield()
 
                 val response = responseQueue.GetResponse()
-                println("io: write response of ${response.size} bytes ${toHexString(response)}")
+                //println("io: write response of ${response.size} bytes ${toHexString(response)}")
                 ftdiDevice.write(response)
 
             } catch (e: Exception) {
@@ -249,7 +249,7 @@ class FTDIClient(
         val size = commandQueue.size()
         try {
 
-            println("readHandler, ${size} bytes: ${commandQueue}, threadid: '${Thread.currentThread().getId()}'")
+            //println("readHandler, ${size} bytes: ${commandQueue}, threadid: '${Thread.currentThread().getId()}'")
             commandQueue.waitFor(listOf(0xAF, 0x05))
             commandQueue.waitForBytes(9)
 
