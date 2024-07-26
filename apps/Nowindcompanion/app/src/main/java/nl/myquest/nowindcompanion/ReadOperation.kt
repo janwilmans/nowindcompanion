@@ -7,6 +7,22 @@ class ReadOperation(val address: Int, data: List<Int>) {
         dataBlocks = createDataBlocks(address, data)
     }
 
+    // these are different operations needed:
+    // right now we create one series of 128 byte blocks, where we do not care about the destination address
+    // however:
+    // scenario 1) - transferring across address $8000
+    // transfer must be split into two operations
+    //   - first the part $xxxx-$7FFF (Page0 and Page1), including all retries in those pages
+    //   - second the part $8000-$xxxx (Page2 and Page3), including all retries in those pages
+    // this is because the client software needs to switch to a different mode to transfer to different pages.
+    // this switch can be done only once mid-way through the transfer. see 'blockRead:' in common.asm
+    //
+    // scenario 2) - transferring not-a-multiple of HARDCODED_READ_DATABLOCK_SIZE (128-bytes)
+    // When a multiple of HARDCODED_READ_DATABLOCK_SIZE (128-bytes) length transfer is requested we use a so-called 'Fast-Transfer'.
+    // This kind of transfer uses loop-unrolling and a stack-pointer trick to check only every 128 bytes if the transfer is done.
+    // For smaller transfers a 'Slow-Transfer' must be used.
+    // This kind of transfer is just a regular LDIR loop so it can stop after any byte.
+
     private fun createDataBlocks(startAddress: Int, data: List<Int>): List<DataBlock> {
         var dataBlocks: MutableList<DataBlock> = mutableListOf()
         val blockSize = HARDCODED_READ_DATABLOCK_SIZE
@@ -72,7 +88,18 @@ class ReadOperation(val address: Int, data: List<Int>) {
             for (block in dataBlocks) {
                 // possible: wrong: we should send block <M3> 3 <M3> <M2> 2 <M2> <M1> 1 <M1> <M0> 0 <M0> with 1 header,
                 // but now, a new header is send for every block
-                transfer(block, responseQueue)
+                //transfer(block, responseQueue)
+
+                val blockAmount = size / HARDCODED_READ_DATABLOCK_SIZE
+                responseQueue.addHeader()
+                responseQueue.add(BlockRead.FASTTRANSFER.value)
+                responseQueue.add16(address + size)
+
+                // possibly wrong, 1 sector is send in 4 x 128 byte block, prefixed and postfixed by marker
+                // see "blockReadTranfer:" in common.asm
+
+                responseQueue.add(blockAmount)
+                responseQueue.addBlocks(block.data.reversed(), HARDCODED_READ_DATABLOCK_SIZE)
             }
 
             var retransmit: MutableList<DataBlock> = mutableListOf()

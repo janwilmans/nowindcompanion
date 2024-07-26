@@ -52,6 +52,38 @@ Alternatively, the whole operation including the MSX Home Computer, the Nowind I
 
 ## Procedure
 
+- DSKIO 
+  - ROMDISK_DSKIO
+  - C_DSKIO
+    - blockRead (b = number of sectors to read/write, de = logical sector number, hl = transfer address)
+        - call blockRead01 (if transfer address < 0x8000)
+        ```
+            > - getHeaderInPage2 (wait for 0xAF 0x05)
+            | - read 1 byte action (0, = goto blockRead23, 1 = fast, 2, = slow, other = done)
+            |  - do action()
+            |    - fastTransfer 
+            |    - blockReadTranfer
+            |    - get 2 byte 'transfer address'
+            |    - get 1 byte 'number of loops: N' (max. 256*128 = 32Kb, N=0 means 256.)
+            |    - get 1 byte 'head marker', keep reading until != 255 (probably never wrong)
+            |    - transfer N times 128 bytes 
+            |    - get 1 byte 'tail marker' and compare against the head-marker, keeps reading until correct marker is found
+             \__ LOOP
+        ```
+        - call blockRead23 (transfer address >= 0x8000)
+        ```
+            > - getHeaderInPage2 (wait for 0xAF 0x05)
+            | - read 1 byte action (1 = fast, 2, = slow, other = done)
+            |  - do action()
+            |    - slowTransfer 
+            |    - get 2 byte 'transfer address'
+            |    - get 2 byte 'size'
+            |    - get 1 byte 'head marker' (exit if 255, because we defined that as an invalid marker, probably never)
+            |    - transfer N times 128 bytes 
+            |    - get 1 byte 'tail marker' and compare against the start-marker, keeps reading until correct marker is found
+             \__ LOOP
+        ```
+    - blockWrite
 
 
 Describe the step-by-step procedure in detail.
@@ -62,11 +94,11 @@ Provide diagrams or images if necessary.
 8. Safety precautions and Compliance requirements.
 
 If you connect your host PC to an MSX Host Computer it is recommended to connect only ONE of them to the earth ground.
-MSX Computers typically do not have a earth ground lead, but it is possible to create a ground loop through a monitor or applifier!
-Make sure nothing attachted to the MSX powered by a grounded lead.
+MSX Computers typically do not have a earth ground lead, but it is possible to create a ground loop through a monitor or amplifier!
+Make sure nothing attached to the MSX powered by a grounded lead.
 
 Note that is also possible to create this problem using a phone if you charge the phone using a grounded device.
-Although problems with these restrictions are extremly rare in practice, failing to comply to these requirements can permanently damage the MSX Computer and the Nowind Interface.
+Although problems with these restrictions are extremely rare in practice, failing to comply to these requirements can permanently damage the MSX Computer and the Nowind Interface.
 
 9. Quality Control
 Outline quality control measures to ensure the protocol is followed correctly.
