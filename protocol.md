@@ -58,30 +58,30 @@ Alternatively, the whole operation including the MSX Home Computer, the Nowind I
     - blockRead (b = number of sectors to read/write, de = logical sector number, hl = transfer address)
         - call blockRead01 (if transfer address < 0x8000)
         ```
-            > - getHeaderInPage2 (wait for 0xAF 0x05)
-            | - read 1 byte action (0, = goto blockRead23, 1 = fast, 2, = slow, other = done)
-            |  - do action()
-            |    - fastTransfer 
-            |    - blockReadTranfer
-            |    - get 2 byte 'transfer address'
-            |    - get 1 byte 'number of loops: N' (max. 256*128 = 32Kb, N=0 means 256.)
-            |    - get 1 byte 'head marker', keep reading until != 255 (probably never wrong)
-            |    - transfer N times 128 bytes 
-            |    - get 1 byte 'tail marker' and compare against the head-marker, keeps reading until correct marker is found
-             \__ LOOP
+        > - getHeaderInPage2 (wait for 0xAF 0x05)
+        | - read 1 byte action (0, = goto blockRead23, 1 = fast, 2, = slow, other = done)
+        |  - do action()
+        |    - fastTransfer 
+        |    - blockReadTransfer
+        |    - get 2 byte 'transfer address' (pointing to the end of the block, because SP is used to write back->front)
+        |    - get 1 byte 'number of loops: N' (max. 256*128 = 32Kb, N=0 means 256.)
+        |    - get 1 byte 'head marker', keep reading until != 255 (probably never wrong)
+        |    - transfer N times 128 bytes 
+        |    - get 1 byte 'tail marker' and compare against the head-marker, keeps reading until correct marker is found
+        \__ LOOP
         ```
         - call blockRead23 (transfer address >= 0x8000)
         ```
-            > - getHeaderInPage2 (wait for 0xAF 0x05)
-            | - read 1 byte action (1 = fast, 2, = slow, other = done)
-            |  - do action()
-            |    - slowTransfer 
-            |    - get 2 byte 'transfer address'
-            |    - get 2 byte 'size'
-            |    - get 1 byte 'head marker' (exit if 255, because we defined that as an invalid marker, probably never)
-            |    - transfer N times 128 bytes 
-            |    - get 1 byte 'tail marker' and compare against the start-marker, keeps reading until correct marker is found
-             \__ LOOP
+        > - getHeaderInPage2 (wait for 0xAF 0x05)
+        | - read 1 byte action (1 = fast, 2, = slow, other = done)
+        |  - do action()
+        |    - slowTransfer 
+        |    - get 2 byte 'transfer address'
+        |    - get 2 byte 'size'
+        |    - get 1 byte 'head marker' (exit if 255, because we defined that as an invalid marker, probably never)
+        |    - transfer N times 128 bytes 
+        |    - get 1 byte 'tail marker' and compare against the start-marker, keeps reading until correct marker is found
+            \__ LOOP
         ```
     - blockWrite
 

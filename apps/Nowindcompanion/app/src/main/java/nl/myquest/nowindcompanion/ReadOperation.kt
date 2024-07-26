@@ -37,39 +37,14 @@ class ReadOperation(val address: Int, data: List<Int>) {
         return dataBlocks
     }
 
-    private fun transfer(block: DataBlock, responseQueue: ResponseQueue) {
-        //println("DSKIO read transfer sector $sector to address ${String.format("0x%04X", address)}, $sectorAmount sectors")
-        val size = block.data.size
-        if (size == 0) {
-            println("transferBlock of size 0, this should never have been scheduled, doing nothing.")
-            return
-        }
-
-        if (block.data.size < HARDCODED_READ_DATABLOCK_SIZE) {
-            // just 1 slow block
-            responseQueue.addHeader()
-            responseQueue.add(BlockRead.SLOWTRANSFER.value)
-            responseQueue.add16(address)
-            responseQueue.add16(size)
-            responseQueue.addBlock(block)
-        } else {
-            // fast blocks are send in reverse order (end -> start)
-            val blockAmount = size / HARDCODED_READ_DATABLOCK_SIZE
-            responseQueue.addHeader()
-            responseQueue.add(BlockRead.FASTTRANSFER.value)
-            responseQueue.add16(address + size)
-
-            // possibly wrong, 1 sector is send in 4 x 128 byte block, prefixed and postfixed by marker
-            // see "blockReadTranfer:" in common.asm
-
-            responseQueue.add(blockAmount)
-            responseQueue.addBlocks(block.data.reversed(), HARDCODED_READ_DATABLOCK_SIZE)
-        }
-    }
-
     private suspend fun verify(block: DataBlock, commandQueue: CommandQueue): Boolean {
         commandQueue.restartTimeout()
-        return (commandQueue.next() == block.marker)
+        val next = commandQueue.next()
+        val result = (next == block.marker);
+        if (result == false) {
+            println("verify for head marker ${block.marker} failed, tail marker received: ${next}")
+        }
+        return result
     }
 
     private suspend fun transferDone(responseQueue: ResponseQueue) {
@@ -85,21 +60,13 @@ class ReadOperation(val address: Int, data: List<Int>) {
         var retransmissions = 0
         while (dataBlocks.size > 0) {
 
+            responseQueue.addHeader()
+            val size = dataBlocks.size * HARDCODED_READ_DATABLOCK_SIZE
+            responseQueue.add(BlockRead.FASTTRANSFER.value)
+            responseQueue.add16(address + size)     // point to the end-address, data written back to front by stack-pointer writes
+            responseQueue.add(dataBlocks.size)
             for (block in dataBlocks) {
-                // possible: wrong: we should send block <M3> 3 <M3> <M2> 2 <M2> <M1> 1 <M1> <M0> 0 <M0> with 1 header,
-                // but now, a new header is send for every block
-                //transfer(block, responseQueue)
-
-                val blockAmount = size / HARDCODED_READ_DATABLOCK_SIZE
-                responseQueue.addHeader()
-                responseQueue.add(BlockRead.FASTTRANSFER.value)
-                responseQueue.add16(address + size)
-
-                // possibly wrong, 1 sector is send in 4 x 128 byte block, prefixed and postfixed by marker
-                // see "blockReadTranfer:" in common.asm
-
-                responseQueue.add(blockAmount)
-                responseQueue.addBlocks(block.data.reversed(), HARDCODED_READ_DATABLOCK_SIZE)
+                responseQueue.addBlock(block)
             }
 
             var retransmit: MutableList<DataBlock> = mutableListOf()
@@ -107,14 +74,15 @@ class ReadOperation(val address: Int, data: List<Int>) {
 
                 if (verify(block, commandQueue) == false) {
                     // block returned incorrect marker, schedule it for re-transmission
-                    println("verify failed, schedule retransmission")
                     retransmit.add(block)
                     retransmissions = retransmissions + 1
                 }
             }
             dataBlocks = retransmit
         }
-        println("ReadOperation done, ${blocks} blocks in ${blocks + retransmissions} transmission(s).")
+        if (retransmissions > 0) {
+            println("ReadOperation done, ${blocks} blocks in ${blocks + retransmissions} transmission(s).")
+        }
         transferDone(responseQueue);
     }
 }

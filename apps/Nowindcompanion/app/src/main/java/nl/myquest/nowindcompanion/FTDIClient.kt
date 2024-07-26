@@ -281,7 +281,10 @@ class FTDIClient(
     }
 
     private suspend fun handleCommand(command: Command) {
-        viewModel.write("$command")
+        if (command.toEnum() != NowindCommand.DSKIO) {
+            viewModel.write("$command")
+        }
+
         when (command.toEnum()) {
             NowindCommand.DSKIO -> {
 
@@ -306,40 +309,6 @@ class FTDIClient(
 
                 println("DSKIO read transfer sector $sector to address ${String.format("0x%04X", address)}, $sectorAmount sectors")
                 ReadOperation(address, data).execute(responseQueue, commandQueue)
-
-//                if (size < HARDCODED_READ_DATABLOCK_SIZE) {
-//                    println(" schedule 1 slow block of size $size")
-//                    // just 1 slow block
-//                    responseQueue.addHeader()
-//                    responseQueue.add(BlockRead.SLOWTRANSFER.value)
-//                    responseQueue.add16(address)
-//                    responseQueue.add16(size)
-//                    responseQueue.addBlock(DataBlock(data))
-//                } else {
-//                    // fast blocks are send in reverse order (end -> start)
-//                    val blockAmount = size / HARDCODED_READ_DATABLOCK_SIZE
-//                    println(" schedule $blockAmount fast block(s)")
-//
-//                    responseQueue.addHeader()
-//                    responseQueue.add(BlockRead.FASTTRANSFER.value)
-//                    responseQueue.add16(address + size)
-//                    responseQueue.add(blockAmount)
-//                    val blocks = responseQueue.addBlocks(data.reversed(), HARDCODED_READ_DATABLOCK_SIZE)
-//                    println(" schedule $blockAmount fast block(s) done")
-//                    commandQueue.waitForBytes(blocks);
-//
-//                    println(" received ${blocks}")
-//                    repeat(blocks)
-//                    {
-//                        println("  read...")
-//                        commandQueue.readByte()
-//                    }
-//
-//                    // done
-//                    responseQueue.addHeader()
-//                    responseQueue.add(BlockRead.EXIT.value)
-//                }
-
             }
 
             NowindCommand.DSKCHG -> {

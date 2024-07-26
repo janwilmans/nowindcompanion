@@ -36,24 +36,6 @@ class ResponseQueue(
         add(dataBlock.marker)
     }
 
-    fun addBlocks(data: List<Int>, blockSize: Int): Int {
-        var startIndex = 0
-        var blocks = 0
-        // Loop through the data list in chunks of blockSize
-        while (startIndex < data.size) {
-            // Calculate the end index for the current block, ensuring it doesn't exceed the list size
-            val endIndex = minOf(startIndex + blockSize, data.size)
-
-            // Create a sublist for the current block and pass it to addBlock
-            val block = data.subList(startIndex, endIndex)
-            addBlock(DataBlock(block))
-            blocks += 1
-            // Move to the next block
-            startIndex = endIndex
-        }
-        return blocks
-    }
-
     fun add(data: List<Int>) {
         for (value in data) {
             queue.add(value)
