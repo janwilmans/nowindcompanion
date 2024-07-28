@@ -185,8 +185,12 @@ class FTDIClient(
         ftdiDevice.setLatencyTimer(16.toByte())
         val readAndWriteBuffer = 3.toByte()
         ftdiDevice.purge(readAndWriteBuffer)
-        val readTimeout: Int = ftdiDevice.readTimeout
+        ftdiDevice.setLatencyTimer(1)
+
+        val readTimeout = ftdiDevice.readTimeout
+        val latencyTimer = ftdiDevice.latencyTimer
         viewModel.write("readTimeout: ${readTimeout}ms")
+        viewModel.write("latencyTimer: ${latencyTimer}ms")
         viewModel.write("Start hosting...")
         while (true) {
             val receivedBytes = ftdiDevice.queueStatus
