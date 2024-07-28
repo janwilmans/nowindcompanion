@@ -18,7 +18,7 @@ class CommandQueue(
     }
 
     private fun ReadTimeout(): Int {
-        return 200
+        return 700
     }
 
     fun timeoutExipired(): Boolean {

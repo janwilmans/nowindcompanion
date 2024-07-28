@@ -63,7 +63,7 @@ class FTDIClient(
     private val context: Context,
     private var viewModel: NowindViewModel,
     private var ftD2xx: D2xxManager = D2xxManager.getInstance(context)
-) : FTDI_Interface {
+) {
 
     enum class HostState {
         Searching,
@@ -307,8 +307,12 @@ class FTDIClient(
                 val diskimageReadPosition = sector * 512;
                 val data = readDisk(diskimage, diskimageReadPosition, size)
 
+                val start = System.currentTimeMillis()
                 println("DSKIO read transfer sector $sector to address ${String.format("0x%04X", address)}, $sectorAmount sectors")
                 ReadOperation(address, data).execute(responseQueue, commandQueue)
+                val duration = System.currentTimeMillis() - start
+                val kbs = size / duration
+                println("  DSKIO read done in ${duration} ms, with is ${kbs} Kb/s")
             }
 
             NowindCommand.DSKCHG -> {
@@ -493,15 +497,6 @@ class FTDIClient(
                 viewModel.write("nowind disconnected!")
             }
             //val device = ftD2xx.openBySerialNumber(info.serial)
-        }
-    }
-
-    override fun getIncomingDataUpdates(): Flow<ByteArray> {
-
-        return callbackFlow {
-            if (!context.hasNowindPermissions()) {
-                throw Exception("Missing Nowind Permissions")
-            }
         }
     }
 

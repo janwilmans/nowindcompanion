@@ -108,9 +108,11 @@ fun DeviceCard(painter: Painter, info: DeviceInfo) {
 fun HomeScreen(viewModel: NowindViewModel) {
     val painter = painterResource(id = R.drawable.nowindv1)
     val painter2 = painterResource(id = R.drawable.nowindv2)
-    Column(Modifier
-        .fillMaxWidth()
-        .fillMaxHeight()) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
+    ) {
         val info = viewModel.deviceInfo.value
         val version = info.version
         when (version) {
@@ -161,8 +163,10 @@ fun DebugScreen(viewModel: NowindViewModel) {
 @Composable
 fun Pager(viewModel: NowindViewModel) {
     val pagerState = rememberPagerState { 3 }
-    HorizontalPager(state = pagerState, modifier = Modifier
-        .fillMaxHeight())
+    HorizontalPager(
+        state = pagerState, modifier = Modifier
+            .fillMaxHeight()
+    )
     { page ->
         when (page) {
             0 -> HomeScreen(viewModel)
@@ -182,7 +186,8 @@ fun FrontPage(viewModel: NowindViewModel) {
             ) {
                 Row {
                     val buildNumber = 1 //BuildConfig.VERSION_CODE
-                    Text(text = "Nowind Companion (C) Jan Wilmans ($buildNumber)",
+                    Text(
+                        text = "Nowind Companion (C) Jan Wilmans ($buildNumber)",
                         modifier = Modifier
                             .background(Color.LightGray)
                             .requiredHeight(50.dp)
@@ -199,9 +204,11 @@ fun FrontPage(viewModel: NowindViewModel) {
                 }
                 // BottomAppBar try out
 
-                Row(Modifier
-                    .weight(1f)
-                    .fillMaxSize()) {
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxSize()
+                ) {
                     Pager(viewModel)
                 }
 
@@ -227,8 +234,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel = viewModel<NowindViewModel>()
             val connection = FTDIClient(this, viewModel)
-
-            connection.getIncomingDataUpdates()
             FrontPage(viewModel)
         }
     }
@@ -286,20 +291,23 @@ fun ImageCard(
                 contentDescription = contentDescription,
                 contentScale = ContentScale.Fit
             )
-            Box(modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black
-                        ),
-                        startY = 300f
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black
+                            ),
+                            startY = 300f
+                        )
                     )
-                ))
-            Box(modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp),
                 contentAlignment = Alignment.BottomStart
             )
             {
@@ -351,8 +359,9 @@ fun DefaultPreview() {
 
 
 @Composable
-fun ColorBox(modifier: Modifier = Modifier,
-             updateColor: (Color) -> Unit
+fun ColorBox(
+    modifier: Modifier = Modifier,
+    updateColor: (Color) -> Unit
 ) {
 
     Box(modifier = modifier
