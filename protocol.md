@@ -1,6 +1,6 @@
 # nowindcompanion
 
-# Nowind Interface Host <> MSX Commumication Protocol Description
+# Nowind Interface Host <> MSX Communication Protocol Description
 
 ## Objective
 
@@ -18,12 +18,12 @@ If the hardware used is not identical to the original design it is unlikely to f
 
 ## Definitions and Abbreviations
 
-- USB Host Device: a PC running Windows, Linux or MacOS, or an android phone. (IPhone not supported)
-- Nowind Interface: the physical cartridge that is inserted into the MSX Home Computer
-- Nowind Protocol: the communication protocol between the MSX Disk ROM and and the USB Host Device
-- Nowind Companion: Nowind Host Application Software for Android phones
-- MSX: MSX Host Computer
-- nwhostapp: Nowind Host Application Software for Linux, Windows and MacOS.
+-   USB Host Device: a PC running Windows, Linux or MacOS, or an android phone. (IPhone not supported)
+-   Nowind Interface: the physical cartridge that is inserted into the MSX Home Computer
+-   Nowind Protocol: the communication protocol between the MSX Disk ROM and and the USB Host Device
+-   Nowind Companion: Nowind Host Application Software for Android phones
+-   MSX: MSX Host Computer
+-   nwhostapp: Nowind Host Application Software for Linux, Windows and MacOS.
 
 ## Roles and Responsibilities
 
@@ -32,59 +32,58 @@ This relationship can in theory be reversed so the the MSX starts waiting for co
 
 Most commands (such a read/write to disk) follow a pattern roughly like this:
 
-- the Host is waiting for a command
-- the MSX sends a command
-- the Host queues a series of replies
-- the MSX starts waiting for a reply, reads it and sends back a 'marker' to acknowledge the reply.
-- the Host checks the 'marker' and queues a re-transmission if it is incorrect.
-- the MSX keeps waiting for more replies until it receives a 'done' command, or a timeout occurs.
-- the Host returns to a 'waiting for command' state after all replies have been acknowledged or a timeout occurs.
+-   the Host is waiting for a command
+-   the MSX sends a command
+-   the Host queues a series of replies
+-   the MSX starts waiting for a reply, reads it and sends back a 'marker' to acknowledge the reply.
+-   the Host checks the 'marker' and queues a re-transmission if it is incorrect.
+-   the MSX keeps waiting for more replies until it receives a 'done' command, or a timeout occurs.
+-   the Host returns to a 'waiting for command' state after all replies have been acknowledged or a timeout occurs.
 
 ## Materials and Equipment
 
 For the system to operate you will need:
 
-- a physical Nowind Interface cartridge
-- an MSX Host Computer
-- a USB Host Device
+-   a physical Nowind Interface cartridge
+-   an MSX Host Computer
+-   a USB Host Device
 
 Alternatively, the whole operation including the MSX Home Computer, the Nowind Interface and the Host application can be emulated using the [Nowind MSX Emulator](https://github.com/janwilmans/nowindlibraries/tree/master/emuv1)
 
 ## Procedure
 
-- DSKIO 
-  - ROMDISK_DSKIO
-  - C_DSKIO
-    - blockRead (b = number of sectors to read/write, de = logical sector number, hl = transfer address)
-        - call blockRead01 (if transfer address < 0x8000)
-        ```
-        > - getHeaderInPage2 (wait for 0xAF 0x05)
-        | - read 1 byte action (0, = goto blockRead23, 1 = fast, 2, = slow, other = done)
-        |  - do action()
-        |    - fastTransfer 
-        |    - blockReadTransfer
-        |    - get 2 byte 'transfer address' (pointing to the end of the block, because SP is used to write back->front)
-        |    - get 1 byte 'number of loops: N' (max. 256*128 = 32Kb, N=0 means 256.)
-        |    - get 1 byte 'head marker', keep reading until != 255 (probably never wrong)
-        |    - transfer N times 128 bytes 
-        |    - get 1 byte 'tail marker' and compare against the head-marker, keeps reading until correct marker is found
-        \__ LOOP
-        ```
-        - call blockRead23 (transfer address >= 0x8000)
-        ```
-        > - getHeaderInPage2 (wait for 0xAF 0x05)
-        | - read 1 byte action (1 = fast, 2, = slow, other = done)
-        |  - do action()
-        |    - slowTransfer 
-        |    - get 2 byte 'transfer address'
-        |    - get 2 byte 'size'
-        |    - get 1 byte 'head marker' (exit if 255, because we defined that as an invalid marker, probably never)
-        |    - transfer N times 128 bytes 
-        |    - get 1 byte 'tail marker' and compare against the start-marker, keeps reading until correct marker is found
+-   DSKIO
+    -   ROMDISK_DSKIO
+    -   C_DSKIO
+        -   blockRead (b = number of sectors to read/write, de = logical sector number, hl = transfer address)
+            -   call blockRead01 (if transfer address < 0x8000)
+            ```
+            > - getHeaderInPage2 (wait for 0xAF 0x05)
+            | - read 1 byte action (0, = goto blockRead23, 1 = fast, 2, = slow, other = done)
+            |  - do action()
+            |    - fastTransfer
+            |    - blockReadTransfer
+            |    - get 2 byte 'transfer address' (pointing to the end of the block, because SP is used to write back->front)
+            |    - get 1 byte 'number of loops: N' (max. 256*128 = 32Kb, N=0 means 256.)
+            |    - get 1 byte 'head marker', keep reading until != 255 (probably never wrong)
+            |    - transfer N times 128 bytes
+            |    - get 1 byte 'tail marker' and compare against the head-marker, keeps reading until correct marker is found
             \__ LOOP
-        ```
-    - blockWrite
-
+            ```
+            -   call blockRead23 (transfer address >= 0x8000)
+            ```
+            > - getHeaderInPage2 (wait for 0xAF 0x05)
+            | - read 1 byte action (1 = fast, 2, = slow, other = done)
+            |  - do action()
+            |    - slowTransfer
+            |    - get 2 byte 'transfer address'
+            |    - get 2 byte 'size'
+            |    - get 1 byte 'head marker' (exit if 255, because we defined that as an invalid marker, probably never)
+            |    - transfer N times 128 bytes
+            |    - get 1 byte 'tail marker' and compare against the start-marker, keeps reading until correct marker is found
+                \__ LOOP
+            ```
+        -   blockWrite
 
 Describe the step-by-step procedure in detail.
 Use numbered steps for clarity.
@@ -101,15 +100,15 @@ Note that is also possible to create this problem using a phone if you charge th
 Although problems with these restrictions are extremely rare in practice, failing to comply to these requirements can permanently damage the MSX Computer and the Nowind Interface.
 
 9. Quality Control
-Outline quality control measures to ensure the protocol is followed correctly.
-Include checkpoints and criteria for quality assurance.
+   Outline quality control measures to ensure the protocol is followed correctly.
+   Include checkpoints and criteria for quality assurance.
 10. Troubleshooting
-Provide a troubleshooting guide for common issues that may arise during the procedure.
+    Provide a troubleshooting guide for common issues that may arise during the procedure.
 11. Documentation and Reporting
-Specify the documentation requirements for recording results and observations.
-Include templates or forms if applicable.
+    Specify the documentation requirements for recording results and observations.
+    Include templates or forms if applicable.
 12. References
-List all references used to develop the protocol.
-Include scientific articles, books, or standard operating procedures (SOPs).
+    List all references used to develop the protocol.
+    Include scientific articles, books, or standard operating procedures (SOPs).
 13. Appendix
-Include any additional information that supports the protocol, such as detailed calculations, additional figures, or extended data.
+    Include any additional information that supports the protocol, such as detailed calculations, additional figures, or extended data.
