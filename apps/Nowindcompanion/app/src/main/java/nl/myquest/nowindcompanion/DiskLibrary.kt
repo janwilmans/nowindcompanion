@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.HttpURLConnection
 
 data class DownloadProgress(val request: DownloadRequest, val bytes: Long, val total: Long) {
@@ -52,7 +54,7 @@ class DiskLibrary(
         scope.launch(Dispatchers.IO) { worker() }
     }
 
-    fun fileFor(entry: RemoteEntry): File = File(dir, safeFileName(entry.name))
+    fun fileFor(entry: RemoteEntry): File = File(dir, entry.fileName)
 
     fun isDownloaded(entry: RemoteEntry): Boolean = fileFor(entry).exists()
 
@@ -130,10 +132,10 @@ class DiskLibrary(
                 continue
             }
             try {
-                download(request)
+                val file = download(request)
                 refreshFiles()
                 if (request.hostWhenDone) {
-                    host(fileFor(request.entry))
+                    host(file)
                 } else {
                     _events.tryEmit("Downloaded ${request.entry.name}")
                 }
@@ -151,44 +153,80 @@ class DiskLibrary(
 
     private class CancelledDownload : Exception()
 
-    // blocking, runs on the worker; writes to a .part file first so a broken download never looks complete
-    private fun download(request: DownloadRequest) {
-        val target = fileFor(request.entry)
-        if (target.exists()) return
+    // blocking, runs on the worker; writes to a .part file first so a broken download never looks complete.
+    // returns the file to host: the downloaded file, or the first disk of a multi disk set
+    private fun download(request: DownloadRequest): File {
+        val entry = request.entry
+        val target = fileFor(entry)
+        if (target.exists()) return target
         val part = File(dir, target.name + ".part")
-        state.write("Download: ${request.entry.url}")
-        val connection = openHttpConnection(request.entry.url)
+        state.write("Download: ${entry.url}")
+        val connection = openHttpConnection(entry.url)
         try {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) {
                 throw IOException("HTTP ${connection.responseCode}")
             }
-            val total = connection.contentLength.toLong()
-            var bytes = 0L
-            _progress.value = DownloadProgress(request, 0, total)
-            connection.inputStream.use { input ->
-                part.outputStream().use { output ->
-                    val buffer = ByteArray(16 * 1024)
-                    var lastReported = 0L
-                    while (true) {
-                        if (cancelUrl == request.entry.url) throw CancelledDownload()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        output.write(buffer, 0, count)
-                        bytes += count
-                        if (bytes - lastReported >= 32 * 1024) {
-                            _progress.value = DownloadProgress(request, bytes, total)
-                            lastReported = bytes
-                        }
-                    }
+            var total = connection.contentLength.toLong()
+            var disks = 1
+            connection.inputStream.buffered().use { input ->
+                if (entry.fromNowindApi) {
+                    val header = parseNowindApiHeader(readHeaderLine(input))
+                    total = header.size ?: -1
+                    disks = header.disks
                 }
+                part.outputStream().use { output -> copyWithProgress(request, input, output, total) }
             }
-            if (!part.renameTo(target)) throw IOException("could not save ${target.name}")
+            val file = if (disks > 1) splitDiskSet(entry, part, disks) else {
+                if (!part.renameTo(target)) throw IOException("could not save ${target.name}")
+                target
+            }
             state.write("Done.")
+            return file
         } finally {
             connection.disconnect()
             part.delete()
         }
     }
-}
 
-fun safeFileName(name: String): String = name.replace(Regex("""[\\/:*?"<>|]"""), "_")
+    private fun copyWithProgress(request: DownloadRequest, input: InputStream, output: OutputStream, total: Long) {
+        var bytes = 0L
+        var lastReported = 0L
+        _progress.value = DownloadProgress(request, 0, total)
+        val buffer = ByteArray(16 * 1024)
+        while (true) {
+            if (cancelUrl == request.entry.url) throw CancelledDownload()
+            val count = input.read(buffer)
+            if (count < 0) break
+            output.write(buffer, 0, count)
+            bytes += count
+            if (bytes - lastReported >= 32 * 1024) {
+                _progress.value = DownloadProgress(request, bytes, total)
+                lastReported = bytes
+            }
+        }
+    }
+
+    // the metadata line in front of a Nowind API download, see parseNowindApiHeader
+    private fun readHeaderLine(input: InputStream): String {
+        val line = StringBuilder()
+        while (line.length < 1024) {
+            val c = input.read()
+            if (c < 0) throw IOException("unexpected end of download")
+            if (c == '\n'.code) return line.toString()
+            line.append(c.toChar())
+        }
+        throw IOException("no Nowind API download")
+    }
+
+    // all disks of a set come in one download, store them as separate disk images
+    private fun splitDiskSet(entry: RemoteEntry, part: File, disks: Int): File {
+        val data = part.readBytes()
+        if (data.size % disks != 0) throw IOException("${entry.name}: ${data.size} bytes can not be split in $disks disks")
+        val diskSize = data.size / disks
+        val files = diskSetFileNames(entry.name, disks).mapIndexed { index, name ->
+            File(dir, name).apply { writeBytes(data.copyOfRange(index * diskSize, (index + 1) * diskSize)) }
+        }
+        state.write("Saved $disks disks of ${entry.name}")
+        return files.first()
+    }
+}

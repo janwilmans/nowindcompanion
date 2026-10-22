@@ -49,4 +49,9 @@ class DiskImageTest {
     fun rejects_tiny_images() {
         readDiskImage(zip("game.dsk" to ByteArray(10)))
     }
+
+    @Test(expected = IOException::class)
+    fun rejects_a_rom_in_a_zip() {
+        readDiskImage(zip("1942-msx.rom" to ByteArray(128 * 1024)))
+    }
 }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -64,14 +65,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import nl.myquest.nowindcompanion.DiskLibrary
+import nl.myquest.nowindcompanion.DiskSource
+import nl.myquest.nowindcompanion.MsxFilter
+import nl.myquest.nowindcompanion.SourceKind
+import nl.myquest.nowindcompanion.formatSize
 import nl.myquest.nowindcompanion.DownloadProgress
 import nl.myquest.nowindcompanion.DownloadRequest
 import nl.myquest.nowindcompanion.RemoteEntry
 import java.io.File
 
 @Composable
-fun BrowseScreen(library: DiskLibrary, hostedDisk: String?, onBack: () -> Unit) {
+fun BrowseScreen(library: DiskLibrary, sources: List<DiskSource>, hostedDisk: String?, onBack: () -> Unit) {
     val viewModel: BrowseViewModel = viewModel()
+    val source by viewModel.source.collectAsState()
+    val msxFilter by viewModel.msxFilter.collectAsState()
     val stack by viewModel.stack.collectAsState()
     val listing by viewModel.listing.collectAsState()
     val filter by viewModel.filter.collectAsState()
@@ -84,6 +91,9 @@ fun BrowseScreen(library: DiskLibrary, hostedDisk: String?, onBack: () -> Unit) 
     LaunchedEffect(library) {
         library.events.collect { snackbar.showSnackbar(it) }
     }
+    LaunchedEffect(sources) {
+        viewModel.setSources(sources)
+    }
     // the back button first walks up the folders that were opened
     BackHandler(enabled = tab == 0 && stack.size > 1) { viewModel.up() }
 
@@ -95,7 +105,7 @@ fun BrowseScreen(library: DiskLibrary, hostedDisk: String?, onBack: () -> Unit) 
             }
             Box(Modifier.weight(1f)) {
                 when (tab) {
-                    0 -> ArchiveTab(viewModel, stack, listing, filter, library, pending, progress, files)
+                    0 -> ArchiveTab(viewModel, sources, source, msxFilter, stack, listing, filter, library, pending, progress, files)
                     else -> LibraryTab(files, hostedDisk, library)
                 }
             }
@@ -108,6 +118,9 @@ fun BrowseScreen(library: DiskLibrary, hostedDisk: String?, onBack: () -> Unit) 
 @Composable
 private fun ArchiveTab(
     viewModel: BrowseViewModel,
+    sources: List<DiskSource>,
+    source: DiskSource?,
+    msxFilter: MsxFilter,
     stack: List<String>,
     listing: ListingState,
     filter: String,
@@ -116,41 +129,67 @@ private fun ArchiveTab(
     progress: DownloadProgress?,
     files: List<File>,
 ) {
-    val current = stack.last()
     Column {
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(browseShortcuts) { shortcut ->
+            items(sources, key = { it.url }) { item ->
                 FilterChip(
-                    selected = current == shortcut.url,
-                    onClick = { viewModel.jumpTo(shortcut.url) },
-                    label = { Text(shortcut.label) }
+                    selected = item.url == source?.url,
+                    onClick = { viewModel.select(item) },
+                    label = { Text(item.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    modifier = Modifier.widthIn(max = 260.dp)
                 )
             }
         }
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, end = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { viewModel.up() }, enabled = stack.size > 1) {
-                Icon(Icons.Rounded.ArrowUpward, contentDescription = "Up")
+        if (source == null) {
+            CenteredBox {
+                Text(
+                    "No disk image sources are enabled.\nAdd or enable one in Settings.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyLarge
+                )
             }
-            Text(
-                pathSegments(current).joinToString("  /  ").ifEmpty { "download.file-hunter.com" },
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            return@Column
+        }
+        if (source.kind == SourceKind.NowindApi) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(MsxFilter.values()) { item ->
+                    FilterChip(
+                        selected = item == msxFilter,
+                        onClick = { viewModel.setMsxFilter(item) },
+                        label = { Text(item.label) }
+                    )
+                }
+            }
+        } else {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, end = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { viewModel.up() }, enabled = stack.size > 1) {
+                    Icon(Icons.Rounded.ArrowUpward, contentDescription = "Up")
+                }
+                Text(
+                    stack.lastOrNull()?.let { pathSegments(source.url, it) }.orEmpty()
+                        .joinToString("  /  ").ifEmpty { source.label },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
         OutlinedTextField(
             value = filter,
             onValueChange = viewModel::setFilter,
-            placeholder = { Text("Filter this folder") },
+            placeholder = { Text("Filter") },
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
             trailingIcon = {
                 if (filter.isNotEmpty()) {
@@ -171,7 +210,7 @@ private fun ArchiveTab(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Rounded.CloudOff, contentDescription = null, modifier = Modifier.size(48.dp))
                     Spacer(Modifier.height(8.dp))
-                    Text("Could not load the folder", style = MaterialTheme.typography.titleMedium)
+                    Text("Could not load the list", style = MaterialTheme.typography.titleMedium)
                     Text(
                         listing.message,
                         style = MaterialTheme.typography.bodySmall,
@@ -379,9 +418,4 @@ private fun CenteredBox(content: @Composable () -> Unit) {
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) { content() }
-}
-
-private fun formatSize(bytes: Long): String = when {
-    bytes >= 1024 * 1024 -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
-    else -> "%.2f KB".format(bytes / 1024.0)
 }

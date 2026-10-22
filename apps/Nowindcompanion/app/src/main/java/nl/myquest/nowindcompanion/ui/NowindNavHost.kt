@@ -59,13 +59,18 @@ fun NowindNavHost(app: NowindApp) {
                 onBack = back,
             )
         }
-        composable(Routes.BROWSE) { BrowseScreen(app.library, hostedDisk, back) }
+        composable(Routes.BROWSE) {
+            BrowseScreen(app.library, settings.allSources.filter { it.enabled }, hostedDisk, back)
+        }
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 settings = settings,
                 onEnableDos2 = { app.appScope.launch { app.settings.setEnableDos2(it) } },
                 onDebugEnabled = { app.appScope.launch { app.settings.setDebugEnabled(it) } },
                 onKeepActive = { app.appScope.launch { app.settings.setKeepActive(it) } },
+                onSourceEnabled = { source, enabled -> app.appScope.launch { app.settings.setSourceEnabled(source, enabled) } },
+                onRemoveSource = { app.appScope.launch { app.settings.removeSource(it.url) } },
+                onAddSource = { app.appScope.launch { app.settings.addSource(it) } },
                 onBack = back,
             )
         }

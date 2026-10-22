@@ -13,6 +13,7 @@
     <!-- inform the installer we require USB OGT (hosting) -->
     <uses-feature android:name="android.hardware.usb.host" />
     
+    <!-- usesCleartextTraffic: user added disk image sources may be plain http sites -->
     <application
         android:name=".NowindApp"
         android:allowBackup="true"
@@ -23,6 +24,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Nowindcompanion"
+        android:usesCleartextTraffic="true"
         tools:targetApi="31">
 
         <activity
