@@ -295,6 +295,57 @@ class FTDIClient(
         }
     }
 
+    private fun le16(offset: Int): Int = (diskimage[offset].toInt() and 0xFF) + 256 * (diskimage[offset + 1].toInt() and 0xFF)
+
+    // converts the boot sector (sector 0) into an MSX Disk Parameter Block, see GETDPB in protocol.md
+    private fun getDpb(command: Command) {
+        if (diskimage.size < 512) return
+        val bytesPerSector = le16(11)
+        val sectorsPerCluster = diskimage[13].toInt() and 0xFF
+        val firstFatSector = le16(14)
+        val fatCopies = diskimage[16].toInt() and 0xFF
+        val rootDirEntries = le16(17)
+        var numberOfSectors = le16(19)
+        val mediaType = diskimage[21].toInt() and 0xFF
+        val sectorsPerFat = le16(22)
+        if (numberOfSectors == 0) {
+            numberOfSectors = le16(32) + 65536 * le16(34)
+        }
+        if (bytesPerSector < 32 || sectorsPerCluster == 0) {
+            println("GETDPB: invalid boot sector, ignored")
+            return
+        }
+
+        val firstDirSector = (firstFatSector + fatCopies * sectorsPerFat) and 0xFFFF
+        val directorySizeInSectors = (rootDirEntries * 32 + bytesPerSector - 1) / bytesPerSector
+        val firstRecordSector = (firstDirSector + directorySizeInSectors) and 0xFFFF
+        val maxClusters = (((numberOfSectors - firstRecordSector) / sectorsPerCluster) + 1) and 0xFFFF
+
+        val dirMask = (bytesPerSector / 32) - 1
+        var dirShift = 0
+        while (dirMask and (1 shl dirShift) != 0) dirShift++
+        val clusMask = sectorsPerCluster - 1
+        var clusShift = 0
+        while (clusMask and (1 shl clusShift) != 0) clusShift++
+
+        responseQueue.addHeader()
+        responseQueue.add(command.getE())
+        responseQueue.add(command.getD())
+        responseQueue.add(mediaType)                    // 1 ID
+        responseQueue.add16(bytesPerSector)             // 2-3 SECSIZ
+        responseQueue.add(dirMask and 0xFF)             // 4 DIRMSK
+        responseQueue.add(dirShift)                     // 5 DIRSHFT
+        responseQueue.add(clusMask and 0xFF)            // 6 CLUSMSK
+        responseQueue.add(clusShift + 1)                // 7 CLUSSHFT
+        responseQueue.add16(firstFatSector)             // 8-9 FIRFAT
+        responseQueue.add(fatCopies)                    // 10 FATCNT
+        responseQueue.add(rootDirEntries and 0xFF)      // 11 MAXENT
+        responseQueue.add16(firstRecordSector)          // 12-13 FIRREC
+        responseQueue.add16(maxClusters)                // 14-15 MAXCLUS
+        responseQueue.add(sectorsPerFat and 0xFF)       // 16 FATSIZ
+        responseQueue.add16(firstDirSector)             // 17-18 FIRDIR
+    }
+
     private suspend fun handleCommand(command: Command) {
         if (command.toEnum() != NowindCommand.DSKIO) {
             viewModel.write("$command")
@@ -343,7 +394,7 @@ class FTDIClient(
                 responseQueue.add(mediaDescriptor) // return media descriptor
             }
 
-            NowindCommand.GETDPB -> TODO()
+            NowindCommand.GETDPB -> getDpb(command)
             NowindCommand.CHOICE -> TODO()
             NowindCommand.DSKFMT -> TODO()
             NowindCommand.DRIVES -> {
