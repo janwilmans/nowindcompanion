@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -56,7 +57,8 @@ class DiskLibrary(
 
     fun fileFor(entry: RemoteEntry): File = File(dir, entry.fileName)
 
-    fun isDownloaded(entry: RemoteEntry): Boolean = fileFor(entry).exists()
+    // an empty file is what is left when the device lost power right after a download, fetch it again
+    fun isDownloaded(entry: RemoteEntry): Boolean = fileFor(entry).length() > 0
 
     fun enqueue(entry: RemoteEntry) {
         if (isDownloaded(entry)) {
@@ -72,7 +74,7 @@ class DiskLibrary(
 
     fun downloadAndHost(entry: RemoteEntry) {
         val file = fileFor(entry)
-        if (file.exists()) {
+        if (file.length() > 0) {
             host(file)
             return
         }
@@ -115,7 +117,7 @@ class DiskLibrary(
     }
 
     private fun refreshFiles() {
-        _files.value = dir.listFiles { f -> f.isFile && !f.name.endsWith(".part") }
+        _files.value = dir.listFiles { f -> f.isFile && f.length() > 0 && !f.name.endsWith(".part") }
             ?.sortedBy { it.name.lowercase() }
             .orEmpty()
     }
@@ -158,7 +160,7 @@ class DiskLibrary(
     private fun download(request: DownloadRequest): File {
         val entry = request.entry
         val target = fileFor(entry)
-        if (target.exists()) return target
+        if (target.length() > 0) return target
         val part = File(dir, target.name + ".part")
         state.write("Download: ${entry.url}")
         val connection = openHttpConnection(entry.url)
@@ -174,7 +176,10 @@ class DiskLibrary(
                     total = header.size ?: -1
                     disks = header.disks
                 }
-                part.outputStream().use { output -> copyWithProgress(request, input, output, total) }
+                FileOutputStream(part).use { output ->
+                    copyWithProgress(request, input, output, total)
+                    output.fd.sync()
+                }
             }
             val file = if (disks > 1) splitDiskSet(entry, part, disks) else {
                 if (!part.renameTo(target)) throw IOException("could not save ${target.name}")
@@ -224,7 +229,12 @@ class DiskLibrary(
         if (data.size % disks != 0) throw IOException("${entry.name}: ${data.size} bytes can not be split in $disks disks")
         val diskSize = data.size / disks
         val files = diskSetFileNames(entry.name, disks).mapIndexed { index, name ->
-            File(dir, name).apply { writeBytes(data.copyOfRange(index * diskSize, (index + 1) * diskSize)) }
+            File(dir, name).apply {
+                FileOutputStream(this).use { output ->
+                    output.write(data, index * diskSize, diskSize)
+                    output.fd.sync()
+                }
+            }
         }
         state.write("Saved $disks disks of ${entry.name}")
         return files.first()

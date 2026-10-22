@@ -33,7 +33,7 @@ class NowindApp : Application() {
             applySettings(initial)
             initial.hostedDisk?.let { hosted ->
                 val file = File(disksDir, hosted)
-                if (file.exists()) library.host(file)
+                if (file.length() > 0) library.host(file)
             }
             client.start()
             settings.settings.collect { applySettings(it) }
