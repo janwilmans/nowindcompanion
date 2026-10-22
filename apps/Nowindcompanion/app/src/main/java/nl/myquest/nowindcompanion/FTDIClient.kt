@@ -9,17 +9,9 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
-import java.io.BufferedInputStream
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.IOException
-import java.net.URL
-import java.nio.ByteBuffer
 import java.util.concurrent.TimeoutException
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 const val HARDCODED_READ_DATABLOCK_SIZE = 128
@@ -69,6 +61,9 @@ class FTDIClient(
 
     @Volatile
     var enableDos2 = false
+
+    // set from the UI thread, swapped in by the hosting thread between commands
+    private val pendingDisk = AtomicReference<ByteArray?>(null)
 
     @Volatile
     private var running = false
@@ -367,7 +362,16 @@ class FTDIClient(
         responseQueue.add16(firstDirSector)             // 17-18 FIRDIR
     }
 
+    // the new image is used from the next command on, the MSX sees it as a disk change
+    fun insertDisk(image: ByteArray) {
+        pendingDisk.set(image)
+    }
+
     private suspend fun handleCommand(command: Command) {
+        pendingDisk.getAndSet(null)?.let {
+            diskimage = it
+            diskChanged = true
+        }
         if (command.toEnum() != NowindCommand.DSKIO) {
             state.write("$command")
         }
@@ -484,103 +488,11 @@ class FTDIClient(
 
     }
 
-    private fun downloadFile(fileUrl: String, destinationFile: File) = try {
-        if (destinationFile.exists()) {
-            state.write("Use cached: $fileUrl")
-        } else {
-            state.write("Download: $fileUrl")
-            BufferedInputStream(URL(fileUrl).openStream()).use { input ->
-                FileOutputStream(destinationFile).use { output ->
-                    val data = ByteArray(1024)
-                    var count: Int
-                    while (input.read(data).also { count = it } != -1) {
-                        output.write(data, 0, count)
-                    }
-                }
-            }
-            state.write("Done.")
-        }
-
-    } catch (e: Exception) {
-        Debug.log("### Exception: $e")
-    }
-
-
-    private fun load(zipFile: File) {
-        if (!zipFile.exists()) {
-            state.write("File not found!")
-            return
-        }
-        val inputStream = FileInputStream(zipFile)
-        val zipInputStream = ZipInputStream(inputStream)
-
-        var firstDiskLoaded = false
-
-        var entry: ZipEntry? = zipInputStream.nextEntry
-        while (entry != null) {
-            val entryName = entry.name
-
-            if (firstDiskLoaded) {
-                state.write("Skipping: $entryName")
-            } else {
-                state.write("Loading: $entryName")
-
-                val byteArrayOutputStream = ByteArrayOutputStream()
-                val buffer = ByteArray(1024)
-                var len: Int
-                while (zipInputStream.read(buffer).also { len = it } > 0) {
-                    byteArrayOutputStream.write(buffer, 0, len)
-                }
-                diskimage = byteArrayOutputStream.toByteArray()
-                diskChanged = true
-                firstDiskLoaded = true
-            }
-            entry = zipInputStream.nextEntry
-        }
-        zipInputStream.close()
-        inputStream.close()
-    }
-
-    private fun showzip(zipFile: File) {
-        if (!zipFile.exists()) {
-            state.write("File not found!")
-            return
-        }
-        val inputStream = FileInputStream(zipFile)
-        val zipInputStream = ZipInputStream(inputStream)
-
-        var entry: ZipEntry? = zipInputStream.nextEntry
-        while (entry != null) {
-            val entryName = entry.name
-            state.write("Found: $entryName")
-            // Read the data for the entry here...
-
-            entry = zipInputStream.nextEntry
-        }
-        zipInputStream.close()
-        inputStream.close()
-    }
-
-    private fun prepareDisks() {
-        val path = context.getExternalFilesDir(null)
-
-        val puyo = "https://download.file-hunter.com/Games/MSX2/DSK/Puyo%20Puyo%20(en)%20(1991)%20(Compile).zip"
-        val aleste2 = "https://download.file-hunter.com/Games/MSX2/DSK/Aleste%202%20(1988)(Compile)(en)(Disk2of3)(Woomb).zip"
-        downloadFile(puyo, File(path, "puyo.zip"))
-        downloadFile(aleste2, File(path, "aleste2.zip"))
-        //showzip(File(path, "puyo.zip"))
-        //showzip(File(path, "aleste2.zip"))
-        load(File(path, "puyo.zip"))
-    }
-
     // hosting runs on its own thread; host() is a blocking runBlocking loop that busy-polls the FTDI device
     fun start() {
         if (thread != null) return
         running = true
         thread = thread(name = "NowindThread") {
-            prepareDisks()
-            state.write("disks loaded...")
-
             while (running) {
                 state.connection.value = ConnectionState.Searching
                 waitForDevicePresent() ?: break
@@ -597,19 +509,4 @@ class FTDIClient(
         thread?.join(3000)
         thread = null
     }
-
-
-    fun allocateDirectExample() {
-        // Specify the size of the byte buffer (in bytes)
-        val bufferSize = 1024 * 1024 // 1 MB, adjust as needed
-
-        // Allocate a direct ByteBuffer for continuous memory
-        val byteBuffer = ByteBuffer.allocateDirect(bufferSize)
-
-        // Use the byteBuffer for your operations
-
-        // Release the allocated memory explicitly when done
-        byteBuffer.clear()
-    }
-
 }
