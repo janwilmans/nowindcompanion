@@ -174,6 +174,14 @@ class FTDIClient(
 //        }
 //    }
 
+    // logs the first bytes of every chunk exchanged with the interface (RX = MSX -> host, TX = host -> MSX)
+    private fun logRawBytes(direction: String, bytes: List<Int>) {
+        val maxShown = 32
+        val shown = bytes.take(maxShown).joinToString(" ") { "%02X".format(it) }
+        val more = if (bytes.size > maxShown) " ... (+${bytes.size - maxShown} more)" else ""
+        println("$direction ${bytes.size} bytes: $shown$more")
+    }
+
     private suspend fun run_ftdi_io() {
 
         val ftdiDevice = ftD2xx.openByIndex(context, 0)
@@ -210,13 +218,14 @@ class FTDIClient(
                 //println("receivedBytes: ${receivedBytes}")
                 val data = ByteArray(receivedBytes)
                 ftdiDevice.read(data)
+                logRawBytes("RX", data.map { it.toInt() and 0xFF })
                 commandQueue.add(data)
 
                 // yield to handle the commandQueue (effectively switching to 'readHandler')
                 yield()
 
                 val response = responseQueue.GetResponse()
-                //println("io: write response of ${response.size} bytes ${toHexString(response)}")
+                if (response.isNotEmpty()) logRawBytes("TX", response.map { it.toInt() and 0xFF })
                 ftdiDevice.write(response)
 
             } catch (e: Exception) {
@@ -268,12 +277,14 @@ class FTDIClient(
         } catch (e: Exception) {
             when (e) {
                 is TimeoutException -> {
+                    println("readHandler TimeoutException: ${e.message}, queue: ${commandQueue}")
                     Log.e("Nowind", "${e.message}, %d bytes remaining in queue were removed.".format(commandQueue.size()))
                     commandQueue.clear()
                     // ignored intentionally
                 }
 
                 is IOException -> {
+                    println("readHandler IOException: ${e.message}, queue: ${commandQueue}")
                     Log.e("Nowind", "Nowind command de-sync, %d bytes remaining in queue were removed.".format(commandQueue.size()))
                     commandQueue.clear()
                     // ignored intentionally
