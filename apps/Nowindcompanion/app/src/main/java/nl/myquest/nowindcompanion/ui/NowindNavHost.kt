@@ -32,6 +32,7 @@ fun NowindNavHost(app: NowindApp) {
     val nav = rememberNavController()
     val connection by app.state.connection.collectAsState()
     val hostedDisk by app.state.hostedDisk.collectAsState()
+    val device by app.state.deviceInfo.collectAsState()
     val messages by app.state.messages.collectAsState()
     val settings by app.settings.settings.collectAsState(initial = Settings())
     val back: () -> Unit = { nav.popBackStack() }
@@ -53,7 +54,15 @@ fun NowindNavHost(app: NowindApp) {
                 onSettings = { nav.navigate(Routes.SETTINGS) },
             )
         }
-        composable(Routes.NOWIND) { PlaceholderScreen("Nowind", back) }
+        composable(Routes.NOWIND) {
+            NowindStatusScreen(
+                connection = connection,
+                device = device,
+                hostedDisk = hostedDisk,
+                onDebugLog = { nav.navigate(Routes.DEBUG) },
+                onBack = back,
+            )
+        }
         composable(Routes.BROWSE) { PlaceholderScreen("Browse", back) }
         composable(Routes.SETTINGS) { PlaceholderScreen("Settings", back) }
         composable(Routes.DEBUG) { DebugScreen(messages, settings.debugEnabled, back) }
