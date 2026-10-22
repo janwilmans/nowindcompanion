@@ -200,6 +200,12 @@ class FTDIClient(
         viewModel.write("readTimeout: ${readTimeout}ms")
         viewModel.write("latencyTimer: ${latencyTimer}ms")
         viewModel.write("Start hosting...")
+
+        // poll quickly while the MSX is active, then back off exponentially to save battery
+        val minPollDelayMs = 1L
+        val maxPollDelayMs = 250L
+        var pollDelayMs = minPollDelayMs
+
         while (true) {
             val receivedBytes = ftdiDevice.queueStatus
             if (receivedBytes == -1) // we lost the connection
@@ -210,9 +216,11 @@ class FTDIClient(
             //println("poll.. queueStatus...")
             if (receivedBytes == 0) {
                 // delay would release control to 'readHandler' but we want to actually do nothing.
-                Thread.sleep(250)
+                Thread.sleep(pollDelayMs)
+                pollDelayMs = minOf(pollDelayMs * 2, maxPollDelayMs)
                 continue
             }
+            pollDelayMs = minPollDelayMs
 
             try {
                 //println("receivedBytes: ${receivedBytes}")
