@@ -309,6 +309,11 @@ class FTDIClient(
         }
     }
 
+    private fun notImplemented(command: Command) {
+        // the C++ host ignores these without a reply, the MSX will time out
+        println("* command not implemented: ${command.toEnum()} (0x%02X), ignored, registers: $command".format(command.cmd))
+    }
+
     private fun le16(offset: Int): Int = (diskimage[offset].toInt() and 0xFF) + 256 * (diskimage[offset + 1].toInt() and 0xFF)
 
     // converts the boot sector (sector 0) into an MSX Disk Parameter Block, see GETDPB in protocol.md
@@ -419,8 +424,8 @@ class FTDIClient(
             }
 
             NowindCommand.GETDPB -> getDpb(command)
-            NowindCommand.CHOICE -> TODO()
-            NowindCommand.DSKFMT -> TODO()
+            NowindCommand.CHOICE -> notImplemented(command)
+            NowindCommand.DSKFMT -> notImplemented(command)
             NowindCommand.DRIVES -> {
                 responseQueue.addHeader()
                 responseQueue.add(0);  // 0 = no phantom drive, 2 = enable phantom drive(s)
@@ -435,23 +440,25 @@ class FTDIClient(
                 responseQueue.add(255); // index of romdisk (255 = no romdisk)
             }
 
-            NowindCommand.GETDATE -> TODO()
-            NowindCommand.DEVICEOPEN -> TODO()
-            NowindCommand.DEVICECLOSE -> TODO()
-            NowindCommand.DEVICERNDIO -> TODO()
-            NowindCommand.DEVICEWRITE -> TODO()
-            NowindCommand.DEVICEREAD -> TODO()
-            NowindCommand.DEVICEEOF -> TODO()
-            NowindCommand.AUXIN -> TODO()
-            NowindCommand.AUXOUT -> TODO()
-            NowindCommand.MESSAGE -> TODO()
-            NowindCommand.CHANGEIMAGE -> TODO()
+            NowindCommand.GETDATE -> notImplemented(command)
+            NowindCommand.DEVICEOPEN -> notImplemented(command)
+            NowindCommand.DEVICECLOSE -> notImplemented(command)
+            NowindCommand.DEVICERNDIO -> notImplemented(command)
+            NowindCommand.DEVICEWRITE -> notImplemented(command)
+            NowindCommand.DEVICEREAD -> notImplemented(command)
+            NowindCommand.DEVICEEOF -> notImplemented(command)
+            NowindCommand.AUXIN -> notImplemented(command)
+            NowindCommand.AUXOUT -> notImplemented(command)
+            NowindCommand.MESSAGE -> notImplemented(command)
+            NowindCommand.CHANGEIMAGE -> notImplemented(command)
             NowindCommand.GETDOSVERSION -> {
                 val msxIdByte = command.a // MSX version number, 0=MSX1, 1=MSX2, 2=MSX2+, 3=MSX Turbo R
 
                 // send back header + "1" to enable DOS1 and "2" to enable DOS2
                 // while this might be a configuration option, it makes sense to enable DOS2 only on MSX2
                 // (because DOS2 is build-in in MSX Turbo R)
+                // HOWEVER, some games, like Puyo Puyo, dont see to be compatible with the way
+                // the nowind ROM 'skips' the DOS2 initialization, so we need to investigate that
                 responseQueue.addHeader()
                 if (msxIdByte == MsxVersion.Two.value) {
                     // 2 will enable dos2, but we will disable it for now,
@@ -472,11 +479,11 @@ class FTDIClient(
                 responseQueue.add(0) // no more commands / not implemented
             }
 
-            NowindCommand.BLOCKREAD -> TODO()
-            NowindCommand.BLOCKWRITE -> TODO()
-            NowindCommand.CPUINFO -> TODO()
-            NowindCommand.COMMAND -> TODO()
-            NowindCommand.STDOUT -> TODO()
+            NowindCommand.BLOCKREAD -> notImplemented(command)
+            NowindCommand.BLOCKWRITE -> notImplemented(command)
+            NowindCommand.CPUINFO -> notImplemented(command)
+            NowindCommand.COMMAND -> notImplemented(command)
+            NowindCommand.STDOUT -> notImplemented(command)
             null -> println("* unknown command: %X ignored".format(command.cmd))
         }
 
@@ -563,13 +570,13 @@ class FTDIClient(
     private fun prepareDisks() {
         val path = context.getExternalFilesDir(null)
 
-        //val puyo = "https://download.file-hunter.com/Games/MSX2/DSK/Puyo%20Puyo%20(en)%20(1991)%20(Compile).zip"
+        val puyo = "https://download.file-hunter.com/Games/MSX2/DSK/Puyo%20Puyo%20(en)%20(1991)%20(Compile).zip"
         val aleste2 = "https://download.file-hunter.com/Games/MSX2/DSK/Aleste%202%20(1988)(Compile)(en)(Disk2of3)(Woomb).zip"
-        //downloadFile(puyo, File(path, "puyo.zip"))
+        downloadFile(puyo, File(path, "puyo.zip"))
         downloadFile(aleste2, File(path, "aleste2.zip"))
         //showzip(File(path, "puyo.zip"))
         //showzip(File(path, "aleste2.zip"))
-        load(File(path, "aleste2.zip"))
+        load(File(path, "puyo.zip"))
     }
 
     init {
