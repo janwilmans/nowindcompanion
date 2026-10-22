@@ -5,17 +5,10 @@ import android.content.pm.PackageManager
 import android.util.Log
 import com.ftdi.j2xx.D2xxManager
 import com.ftdi.j2xx.D2xxManager.FtDeviceInfoListNode
-import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import com.ftdi.j2xx.FT_Device
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -28,6 +21,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.TimeoutException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
+import kotlin.concurrent.thread
 
 const val HARDCODED_READ_DATABLOCK_SIZE = 128
 
@@ -35,13 +29,12 @@ const val HARDCODED_READ_DATABLOCK_SIZE = 128
 // to view
 /*
 @startuml
-ComponentActivity <|-- MainActivity
-MainActivity -> NowindViewModel
-MainActivity -> FTDIClient
-NowindViewModel -d-> HomeScreen
-NowindViewModel -d-> SettingScreen
-NowindViewModel -d-> DebugScreen
-FTDIClient -- NowindViewModel
+Application <|-- NowindApp
+NowindApp -> FTDIClient
+NowindApp -> HostState
+HostState -d-> HomeScreen
+HostState -d-> DebugScreen
+FTDIClient -- HostState
 FTDIClient -d-* CommandQueue
 FTDIClient -d-* ResponseQueue
 FTDIClient --* diskimage
@@ -53,30 +46,27 @@ FTDIClient : host()
 // https://www.amazon.nl/USB-OTG-Oplaadpoort-Compatibel-Chromecast/dp/B0B5MPCJF5/ref=asc_df_B08C5FWQND/?tag=nlshogostdde-21&linkCode=df0&hvadid=624714333587&hvpos=&hvnetw=g&hvrand=3005483864684403508&hvpone=&hvptwo=&hvqmt=&hvdev=c&hvdvcmdl=&hvlocint=&hvlocphy=9064064&hvtargid=pla-969368052238&mcid=eee95ed571413bc8b618785591a38bd9&th=1
 
 
-class DeviceInfo(val version: DetectedNowindVersion = DetectedNowindVersion.None) {
-    var serial: String = ""
-    var description: String = ""
-}
+data class DeviceInfo(
+    val version: DetectedNowindVersion = DetectedNowindVersion.None,
+    val serial: String = "",
+    val description: String = ""
+)
 
-@OptIn(DelicateCoroutinesApi::class)
 class FTDIClient(
     private val context: Context,
-    private var viewModel: NowindViewModel,
+    private val state: HostState,
     private var ftD2xx: D2xxManager = D2xxManager.getInstance(context)
 ) {
-
-    enum class HostState {
-        Searching,
-        Idle,
-        Reading,
-        Writing,
-    }
 
     private val commandQueue = CommandQueue()    // Host << MSX
     private val responseQueue = ResponseQueue()  // Host >> MSX
 
     private var diskimage: ByteArray = ByteArray(1024 * 1024)
     private var diskChanged = true
+
+    @Volatile
+    private var running = false
+    private var thread: Thread? = null
 
     fun readDisk(diskData: ByteArray, position: Int, size: Int): List<Int> {
         require(position >= 0 && position < diskData.size) { "Invalid position" }
@@ -90,10 +80,7 @@ class FTDIClient(
     }
 
     private fun getDeviceInfo(node: FtDeviceInfoListNode): DeviceInfo {
-        val info = DeviceInfo(DetectedNowindVersion.V2)
-        info.serial = node.serialNumber.toString()
-        info.description = node.description.toString()
-        return info
+        return DeviceInfo(DetectedNowindVersion.V2, node.serialNumber.toString(), node.description.toString())
     }
 
     private fun getDeviceInfoOpt(node: FtDeviceInfoListNode?): DeviceInfo {
@@ -107,36 +94,34 @@ class FTDIClient(
         return context.packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)
     }
 
-    private fun waitForDevicePresent(): DeviceInfo {
+    // returns null when the client is stopped before a device is found
+    private fun waitForDevicePresent(): DeviceInfo? {
         if (hasOTGFeature(context)) {
-            viewModel.write("OTG Supported!")
+            state.write("OTG Supported!")
         } else {
-            viewModel.write("OTG is not supported!")
+            state.write("OTG is not supported!")
+            state.connection.value = ConnectionState.NoUsbHost
         }
-        viewModel.write("Ready and waiting...")
+        state.write("Ready and waiting...")
         var foundDevices = 0
-        while (true) {
-            try {
-                viewModel.setReading(true)
-                val numberOfDevices = ftD2xx.createDeviceInfoList(context)
-                val deviceList = arrayOfNulls<FtDeviceInfoListNode>(numberOfDevices)
-                ftD2xx.getDeviceInfoList(numberOfDevices, deviceList)
-                if (foundDevices != numberOfDevices) {
-                    viewModel.write("Found $numberOfDevices FTDI OTG devices")
-                    foundDevices = numberOfDevices
-                }
-                if (foundDevices == 0) {
-                    viewModel.setDeviceInfo(DeviceInfo())
-                } else {
-                    val info = getDeviceInfoOpt(deviceList[0])
-                    viewModel.setDeviceInfo(info = info)
-                    return info
-                }
-            } finally {
-                viewModel.setReading(false)
+        while (running) {
+            val numberOfDevices = ftD2xx.createDeviceInfoList(context)
+            val deviceList = arrayOfNulls<FtDeviceInfoListNode>(numberOfDevices)
+            ftD2xx.getDeviceInfoList(numberOfDevices, deviceList)
+            if (foundDevices != numberOfDevices) {
+                state.write("Found $numberOfDevices FTDI OTG devices")
+                foundDevices = numberOfDevices
+            }
+            if (foundDevices == 0) {
+                state.deviceInfo.value = DeviceInfo()
+            } else {
+                val info = getDeviceInfoOpt(deviceList[0])
+                state.deviceInfo.value = info
+                return info
             }
             Thread.sleep(500)
         }
+        return null
     }
 //
 //    private suspend fun first_level2() {
@@ -183,14 +168,23 @@ class FTDIClient(
         println("$direction ${bytes.size} bytes: $shown$more")
     }
 
-    private suspend fun run_ftdi_io() {
+    private suspend fun open_and_run_ftdi_io() {
 
         val ftdiDevice = ftD2xx.openByIndex(context, 0)
         if (ftdiDevice == null || !ftdiDevice.isOpen) {
-            viewModel.write("Error opening device at index 0!")
+            state.write("Error opening device at index 0!")
+            state.connection.value = ConnectionState.OpenFailed
             Thread.sleep(2000)
             return
         }
+        try {
+            run_ftdi_io(ftdiDevice)
+        } finally {
+            ftdiDevice.close()
+        }
+    }
+
+    private suspend fun run_ftdi_io(ftdiDevice: FT_Device) {
         ftdiDevice.setLatencyTimer(16.toByte())
         val readAndWriteBuffer = 3.toByte()
         ftdiDevice.purge(readAndWriteBuffer)
@@ -198,16 +192,17 @@ class FTDIClient(
 
         val readTimeout = ftdiDevice.readTimeout
         val latencyTimer = ftdiDevice.latencyTimer
-        viewModel.write("readTimeout: ${readTimeout}ms")
-        viewModel.write("latencyTimer: ${latencyTimer}ms")
-        viewModel.write("Start hosting...")
+        state.write("readTimeout: ${readTimeout}ms")
+        state.write("latencyTimer: ${latencyTimer}ms")
+        state.write("Start hosting...")
+        state.connection.value = ConnectionState.Hosting
 
         // poll quickly while the MSX is active, then back off exponentially to save battery
         val minPollDelayMs = 1L
         val maxPollDelayMs = 250L
         var pollDelayMs = minPollDelayMs
 
-        while (true) {
+        while (running) {
             val receivedBytes = ftdiDevice.queueStatus
             if (receivedBytes == -1) // we lost the connection
             {
@@ -244,15 +239,15 @@ class FTDIClient(
     }
 
     private fun host() = runBlocking {
-
-        var running = true
-        val handler_job = async {
-            while (running) {
-                readHandler(commandQueue); }
+        val handler_job = launch {
+            while (true) {
+                readHandler(commandQueue)
+            }
         }
-        run_ftdi_io();
-        running = false
-        handler_job.await();
+        open_and_run_ftdi_io()
+        // the handler may be waiting for MSX data that will never arrive, cancel it at its next yield()
+        handler_job.cancelAndJoin()
+        commandQueue.clear()
     }
 
 // received at boot:
@@ -367,7 +362,7 @@ class FTDIClient(
 
     private suspend fun handleCommand(command: Command) {
         if (command.toEnum() != NowindCommand.DSKIO) {
-            viewModel.write("$command")
+            state.write("$command")
         }
 
         when (command.toEnum()) {
@@ -492,9 +487,9 @@ class FTDIClient(
 
     private fun downloadFile(fileUrl: String, destinationFile: File) = try {
         if (destinationFile.exists()) {
-            viewModel.write("Use cached: $fileUrl")
+            state.write("Use cached: $fileUrl")
         } else {
-            viewModel.write("Download: $fileUrl")
+            state.write("Download: $fileUrl")
             BufferedInputStream(URL(fileUrl).openStream()).use { input ->
                 FileOutputStream(destinationFile).use { output ->
                     val data = ByteArray(1024)
@@ -504,7 +499,7 @@ class FTDIClient(
                     }
                 }
             }
-            viewModel.write("Done.")
+            state.write("Done.")
         }
 
     } catch (e: Exception) {
@@ -514,7 +509,7 @@ class FTDIClient(
 
     private fun load(zipFile: File) {
         if (!zipFile.exists()) {
-            viewModel.write("File not found!")
+            state.write("File not found!")
             return
         }
         val inputStream = FileInputStream(zipFile)
@@ -527,9 +522,9 @@ class FTDIClient(
             val entryName = entry.name
 
             if (firstDiskLoaded) {
-                viewModel.write("Skipping: $entryName")
+                state.write("Skipping: $entryName")
             } else {
-                viewModel.write("Loading: $entryName")
+                state.write("Loading: $entryName")
 
                 val byteArrayOutputStream = ByteArrayOutputStream()
                 val buffer = ByteArray(1024)
@@ -549,7 +544,7 @@ class FTDIClient(
 
     private fun showzip(zipFile: File) {
         if (!zipFile.exists()) {
-            viewModel.write("File not found!")
+            state.write("File not found!")
             return
         }
         val inputStream = FileInputStream(zipFile)
@@ -558,7 +553,7 @@ class FTDIClient(
         var entry: ZipEntry? = zipInputStream.nextEntry
         while (entry != null) {
             val entryName = entry.name
-            viewModel.write("Found: $entryName")
+            state.write("Found: $entryName")
             // Read the data for the entry here...
 
             entry = zipInputStream.nextEntry
@@ -579,23 +574,29 @@ class FTDIClient(
         load(File(path, "puyo.zip"))
     }
 
-    init {
-
-        GlobalScope.launch(newSingleThreadContext("NowindThread"))
-        {
+    // hosting runs on its own thread; host() is a blocking runBlocking loop that busy-polls the FTDI device
+    fun start() {
+        if (thread != null) return
+        running = true
+        thread = thread(name = "NowindThread") {
             prepareDisks()
-            withContext(Dispatchers.Main)
-            {
-                viewModel.write("disks loaded...")
-            }
+            state.write("disks loaded...")
 
-            while (true) {
-                waitForDevicePresent()
+            while (running) {
+                state.connection.value = ConnectionState.Searching
+                waitForDevicePresent() ?: break
                 host()
-                viewModel.write("nowind disconnected!")
+                state.deviceInfo.value = DeviceInfo()
+                state.write("nowind disconnected!")
             }
-            //val device = ftD2xx.openBySerialNumber(info.serial)
+            state.connection.value = ConnectionState.Stopped
         }
+    }
+
+    fun stop() {
+        running = false
+        thread?.join(3000)
+        thread = null
     }
 
 

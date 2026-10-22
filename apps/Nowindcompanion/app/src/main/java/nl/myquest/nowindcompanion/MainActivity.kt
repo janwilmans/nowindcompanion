@@ -34,6 +34,8 @@ import androidx.compose.material3.MaterialTheme.colorScheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.*
@@ -46,7 +48,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import nl.myquest.nowindcompanion.ui.theme.NowindCompanionTheme
 import kotlin.random.Random
 
@@ -105,7 +106,7 @@ fun DeviceCard(painter: Painter, info: DeviceInfo) {
 }
 
 @Composable
-fun HomeScreen(viewModel: NowindViewModel) {
+fun HomeScreen(state: HostState) {
     val painter = painterResource(id = R.drawable.nowindv1)
     val painter2 = painterResource(id = R.drawable.nowindv2)
     Column(
@@ -113,7 +114,7 @@ fun HomeScreen(viewModel: NowindViewModel) {
             .fillMaxWidth()
             .fillMaxHeight()
     ) {
-        val info = viewModel.deviceInfo.value
+        val info by state.deviceInfo.collectAsState()
         val version = info.version
         when (version) {
             DetectedNowindVersion.None -> Text(text = "Waiting...")
@@ -124,7 +125,7 @@ fun HomeScreen(viewModel: NowindViewModel) {
 }
 
 @Composable
-fun SettingScreen(viewModel: NowindViewModel) {
+fun SettingScreen(state: HostState) {
     Column(Modifier.fillMaxWidth()) {
         val color = remember {
             mutableStateOf(Color.Yellow)
@@ -136,7 +137,7 @@ fun SettingScreen(viewModel: NowindViewModel) {
         )
         {
             color.value = it
-            viewModel.write("color changes to $color.value!")
+            state.write("color changes to $color.value!")
         }
         Box(
             modifier = Modifier
@@ -148,9 +149,9 @@ fun SettingScreen(viewModel: NowindViewModel) {
 }
 
 @Composable
-fun DebugScreen(viewModel: NowindViewModel) {
+fun DebugScreen(state: HostState) {
     Box(Modifier.fillMaxWidth()) {
-        val messages = viewModel.messages.value
+        val messages by state.messages.collectAsState()
         LazyColumn {
             items(messages.data) { data ->
                 Text(text = data)
@@ -161,7 +162,7 @@ fun DebugScreen(viewModel: NowindViewModel) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun Pager(viewModel: NowindViewModel) {
+fun Pager(state: HostState) {
     val pagerState = rememberPagerState { 3 }
     HorizontalPager(
         state = pagerState, modifier = Modifier
@@ -169,15 +170,15 @@ fun Pager(viewModel: NowindViewModel) {
     )
     { page ->
         when (page) {
-            0 -> HomeScreen(viewModel)
-            1 -> SettingScreen(viewModel)
-            2 -> DebugScreen(viewModel)
+            0 -> HomeScreen(state)
+            1 -> SettingScreen(state)
+            2 -> DebugScreen(state)
         }
     }
 }
 
 @Composable
-fun FrontPage(viewModel: NowindViewModel) {
+fun FrontPage(state: HostState) {
     NowindCompanionTheme {
         Surface(color = colorScheme.background) {
             Column(
@@ -209,7 +210,7 @@ fun FrontPage(viewModel: NowindViewModel) {
                         .weight(1f)
                         .fillMaxSize()
                 ) {
-                    Pager(viewModel)
+                    Pager(state)
                 }
 
 //                Text( text = "foot",
@@ -232,9 +233,7 @@ class MainActivity : ComponentActivity() {
         Log.i("tag", "Initialize nowind main")
 
         setContent {
-            val viewModel = viewModel<NowindViewModel>()
-            val connection = FTDIClient(this, viewModel)
-            FrontPage(viewModel)
+            FrontPage(nowindApp.state)
         }
     }
 }
