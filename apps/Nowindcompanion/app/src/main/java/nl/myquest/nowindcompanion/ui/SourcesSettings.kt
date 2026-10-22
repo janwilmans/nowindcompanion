@@ -89,8 +89,8 @@ fun ColumnScope.SourceRows(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    shortUrl(source.url).let { if (source.builtIn) it else it.substringAfter('/', "") }
-                        .ifEmpty { "/" } + "  ·  " + source.kind.label,
+                    if (source.builtIn) source.kind.label
+                    else shortUrl(source.url).substringAfter('/', "").ifEmpty { "/" } + "  ·  " + source.kind.label,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
