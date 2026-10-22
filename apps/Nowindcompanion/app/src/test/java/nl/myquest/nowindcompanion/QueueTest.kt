@@ -2,6 +2,7 @@ package nl.myquest.nowindcompanion
 
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Test
 
 import org.junit.Assert.*
@@ -34,20 +35,26 @@ class NowindProtocolTests {
             var count: Int = 0
 
             val combinedJob = launch {
+                // the writer yields after every chunk, like run_ftdi_io does after receiving data from the interface
                 launch {
-
                     step(count++, 0, "queue AF05")
                     commandQueue.add(byteArrayOf(0xAF.toByte(), 0x05.toByte()))
+                    yield()
                     step(count++, 4, "queue 0102")
                     commandQueue.add(byteArrayOf(0x01.toByte(), 0x02.toByte()))
+                    yield()
                     step(count++, 5, "queue 0102")
                     commandQueue.add(byteArrayOf(0x01.toByte(), 0x02.toByte()))
+                    yield()
                     step(count++, 6, "queue 0102")
                     commandQueue.add(byteArrayOf(0x01.toByte(), 0x02.toByte()))
+                    yield()
                     step(count++, 7, "queue 0102")
                     commandQueue.add(byteArrayOf(0x01.toByte(), 0x02.toByte()))
+                    yield()
                     step(count++, 8, "queue 03")
                     commandQueue.add(byteArrayOf(0x03.toByte()))
+                    yield()
                     step(count++, 10, "writer done")
                 }
 
