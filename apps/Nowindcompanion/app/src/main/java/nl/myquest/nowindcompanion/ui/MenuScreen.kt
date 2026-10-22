@@ -100,6 +100,8 @@ private fun HeroHeader(connection: ConnectionState, hostedDisk: String?) {
             painter = painterResource(R.drawable.nowindv2),
             contentDescription = "Nowind interface",
             contentScale = ContentScale.Crop,
+            // the top of the photo shows the USB plugs, the bottom has printed text that clashes with the title
+            alignment = Alignment.TopCenter,
             modifier = Modifier.fillMaxSize()
         )
         Box(
@@ -108,8 +110,9 @@ private fun HeroHeader(connection: ConnectionState, hostedDisk: String?) {
                 .background(
                     Brush.verticalGradient(
                         0f to Color.Black.copy(alpha = 0.15f),
-                        0.45f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.85f)
+                        0.3f to Color.Transparent,
+                        0.6f to Color.Black.copy(alpha = 0.75f),
+                        1f to Color.Black.copy(alpha = 0.95f)
                     )
                 )
         )

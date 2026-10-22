@@ -4,15 +4,9 @@ import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -65,7 +59,7 @@ fun NowindNavHost(app: NowindApp) {
                 onBack = back,
             )
         }
-        composable(Routes.BROWSE) { PlaceholderScreen("Browse", back) }
+        composable(Routes.BROWSE) { BrowseScreen(app.library, hostedDisk, back) }
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 settings = settings,
@@ -75,14 +69,5 @@ fun NowindNavHost(app: NowindApp) {
             )
         }
         composable(Routes.DEBUG) { DebugScreen(messages, settings.debugEnabled, back) }
-    }
-}
-
-@Composable
-private fun PlaceholderScreen(title: String, onBack: () -> Unit) {
-    ScreenScaffold(title, onBack) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-            Text("Coming soon")
-        }
     }
 }

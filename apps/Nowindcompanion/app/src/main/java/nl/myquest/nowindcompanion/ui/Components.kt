@@ -43,6 +43,7 @@ fun ScreenScaffold(
     title: String,
     onBack: () -> Unit,
     actions: @Composable RowScope.() -> Unit = {},
+    snackbarHost: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit
 ) {
     Scaffold(
@@ -58,6 +59,7 @@ fun ScreenScaffold(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         },
+        snackbarHost = snackbarHost,
         containerColor = MaterialTheme.colorScheme.background,
         content = content
     )
