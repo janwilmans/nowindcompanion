@@ -40,10 +40,16 @@ class NowindApp : Application() {
         }
     }
 
+    private var keepActive = false
+
     // FTDIClient reads these from its own thread, so mirror the persisted values into volatile fields
     private fun applySettings(value: Settings) {
         Debug.enabled = value.debugEnabled
         client.enableDos2 = value.enableDos2
+        if (value.keepActive != keepActive) {
+            keepActive = value.keepActive
+            if (keepActive) HostingService.start(this) else HostingService.stop(this)
+        }
     }
 }
 

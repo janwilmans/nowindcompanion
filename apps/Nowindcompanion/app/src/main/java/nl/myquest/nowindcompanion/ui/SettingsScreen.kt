@@ -1,5 +1,10 @@
 package nl.myquest.nowindcompanion.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -20,9 +26,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import nl.myquest.nowindcompanion.Settings
 
 @Composable
@@ -30,8 +38,24 @@ fun SettingsScreen(
     settings: Settings,
     onEnableDos2: (Boolean) -> Unit,
     onDebugEnabled: (Boolean) -> Unit,
+    onKeepActive: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
+    // the hosting notification needs permission on Android 13+, without it the service still runs, just invisibly
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        onKeepActive(true)
+    }
+    val context = LocalContext.current
+    val enableKeepActive: (Boolean) -> Unit = { enable ->
+        val needsPermission = enable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (needsPermission) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            onKeepActive(enable)
+        }
+    }
+
     ScreenScaffold("Settings", onBack) { padding ->
         Column(
             Modifier
@@ -40,6 +64,16 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            Section("Hosting") {
+                SwitchRow(
+                    icon = Icons.Rounded.PowerSettingsNew,
+                    title = "Keep hosting in the background",
+                    description = "Keeps the app active with a notification, so the MSX can use its disk while " +
+                            "the screen is off or another app is open. Uses more battery.",
+                    checked = settings.keepActive,
+                    onCheckedChange = enableKeepActive
+                )
+            }
             Section("MSX") {
                 SwitchRow(
                     icon = Icons.Rounded.Dns,

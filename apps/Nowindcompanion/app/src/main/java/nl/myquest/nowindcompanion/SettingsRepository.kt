@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.map
 data class Settings(
     val enableDos2: Boolean = false,    // off by default, some games (Puyo Puyo) do not like the way DOS2 is skipped
     val debugEnabled: Boolean = true,
+    val keepActive: Boolean = false,    // foreground service + wake lock, so hosting continues in the background
     val hostedDisk: String? = null,     // file name in the disk library, restored at startup
 )
 
@@ -22,6 +23,7 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val ENABLE_DOS2 = booleanPreferencesKey("enable_dos2")
         val DEBUG_ENABLED = booleanPreferencesKey("debug_enabled")
+        val KEEP_ACTIVE = booleanPreferencesKey("keep_active")
         val HOSTED_DISK = stringPreferencesKey("hosted_disk")
     }
 
@@ -30,6 +32,7 @@ class SettingsRepository(private val context: Context) {
     private fun Preferences.toSettings() = Settings(
         enableDos2 = this[Keys.ENABLE_DOS2] ?: false,
         debugEnabled = this[Keys.DEBUG_ENABLED] ?: true,
+        keepActive = this[Keys.KEEP_ACTIVE] ?: false,
         hostedDisk = this[Keys.HOSTED_DISK],
     )
 
@@ -39,6 +42,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setDebugEnabled(value: Boolean) {
         context.dataStore.edit { it[Keys.DEBUG_ENABLED] = value }
+    }
+
+    suspend fun setKeepActive(value: Boolean) {
+        context.dataStore.edit { it[Keys.KEEP_ACTIVE] = value }
     }
 
     suspend fun setHostedDisk(fileName: String) {

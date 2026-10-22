@@ -65,6 +65,7 @@ fun NowindNavHost(app: NowindApp) {
                 settings = settings,
                 onEnableDos2 = { app.appScope.launch { app.settings.setEnableDos2(it) } },
                 onDebugEnabled = { app.appScope.launch { app.settings.setDebugEnabled(it) } },
+                onKeepActive = { app.appScope.launch { app.settings.setKeepActive(it) } },
                 onBack = back,
             )
         }
