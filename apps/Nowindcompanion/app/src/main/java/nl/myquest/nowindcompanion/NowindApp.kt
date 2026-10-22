@@ -27,20 +27,23 @@ class NowindApp : Application() {
         val disksDir = getExternalFilesDir("disks") ?: File(filesDir, "disks")
         library = DiskLibrary(disksDir, appScope, client, state, settings)
 
-        // FTDIClient reads these from its own thread, so mirror the persisted values into volatile fields
         appScope.launch {
-            settings.settings.collect {
-                Debug.enabled = it.debugEnabled
-                client.enableDos2 = it.enableDos2
+            // apply the stored settings before hosting starts, so 'debug information off' is honored from the start
+            val initial = settings.settings.first()
+            applySettings(initial)
+            initial.hostedDisk?.let { hosted ->
+                val file = File(disksDir, hosted)
+                if (file.exists()) library.host(file)
             }
+            client.start()
+            settings.settings.collect { applySettings(it) }
         }
-        // host the disk that was hosted last time
-        appScope.launch {
-            val hosted = settings.settings.first().hostedDisk ?: return@launch
-            val file = File(disksDir, hosted)
-            if (file.exists()) library.host(file)
-        }
-        client.start()
+    }
+
+    // FTDIClient reads these from its own thread, so mirror the persisted values into volatile fields
+    private fun applySettings(value: Settings) {
+        Debug.enabled = value.debugEnabled
+        client.enableDos2 = value.enableDos2
     }
 }
 
