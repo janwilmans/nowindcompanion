@@ -60,9 +60,9 @@ fun MenuScreen(
     onSettings: () -> Unit,
 ) {
     val entries = listOf(
-        MenuEntry(Icons.Rounded.Usb, "Nowind", "Interface status and device information", onNowind),
         MenuEntry(Icons.Rounded.TravelExplore, "Browse", "Find and download disk images from file-hunter.com", onBrowse),
         MenuEntry(Icons.Rounded.Settings, "Settings", settingsSummary, onSettings),
+        MenuEntry(Icons.Rounded.Usb, "Nowind", "Interface status and device information", onNowind),
     )
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(
