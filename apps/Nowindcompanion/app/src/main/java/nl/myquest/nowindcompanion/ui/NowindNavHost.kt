@@ -28,6 +28,9 @@ fun NowindNavHost(app: NowindApp) {
     val connection by app.state.connection.collectAsState()
     val hostedDisk by app.state.hostedDisk.collectAsState()
     val device by app.state.deviceInfo.collectAsState()
+    val readStats by app.state.readStats.collectAsState()
+    val writeStats by app.state.writeStats.collectAsState()
+    val commands by app.state.commands.collectAsState()
     val messages by app.state.messages.collectAsState()
     val settings by app.settings.settings.collectAsState(initial = Settings())
     val back: () -> Unit = { nav.popBackStack() }
@@ -44,6 +47,8 @@ fun NowindNavHost(app: NowindApp) {
             MenuScreen(
                 connection = connection,
                 hostedDisk = hostedDisk,
+                commands = commands,
+                recentReads = app.state.recentReads,
                 settingsSummary = "DOS2 ${if (settings.enableDos2) "on" else "off"}  ·  debug information ${if (settings.debugEnabled) "on" else "off"}",
                 onNowind = { nav.navigate(Routes.NOWIND) },
                 onBrowse = { nav.navigate(Routes.BROWSE) },
@@ -55,6 +60,9 @@ fun NowindNavHost(app: NowindApp) {
                 connection = connection,
                 device = device,
                 hostedDisk = hostedDisk,
+                readStats = readStats,
+                writeStats = writeStats,
+                onResetStats = app.state::resetStats,
                 onDebugLog = { nav.navigate(Routes.DEBUG) },
                 onBack = back,
             )

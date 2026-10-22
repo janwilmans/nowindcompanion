@@ -6,6 +6,7 @@ import com.ftdi.j2xx.D2xxManager
 import com.ftdi.j2xx.D2xxManager.FtDeviceInfoListNode
 import com.ftdi.j2xx.FT_Device
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -368,6 +369,7 @@ class FTDIClient(
     }
 
     private suspend fun handleCommand(command: Command) {
+        state.commands.update { it + 1 }
         pendingDisk.getAndSet(null)?.let {
             diskimage = it
             diskChanged = true
@@ -403,12 +405,14 @@ class FTDIClient(
                 }
                 val data = readDisk(diskimage, diskimageReadPosition, size)
 
-                val start = System.currentTimeMillis()
+                val start = System.nanoTime()
                 Debug.log("DSKIO read transfer sector $sector to address ${String.format("0x%04X", address)}, $sectorAmount sectors")
                 ReadOperation(address, data).execute(responseQueue, commandQueue)
-                val duration = System.currentTimeMillis() - start
-                val kbs = size / maxOf(duration, 1)
-                Debug.log("  DSKIO read done in ${duration} ms, with is ${kbs} Kb/s")
+                // includes waiting for the MSX to acknowledge every block, so it is the speed the MSX sees
+                val elapsed = System.nanoTime() - start
+                state.readStats.update { it.add(size.toLong(), elapsed) }
+                state.recentReads.add(size.toLong(), elapsed)
+                Debug.log("  DSKIO read done in ${elapsed / 1_000_000} ms, ${formatSpeed(size / 1024.0 / (elapsed / 1e9))}")
             }
 
             NowindCommand.DSKCHG -> {

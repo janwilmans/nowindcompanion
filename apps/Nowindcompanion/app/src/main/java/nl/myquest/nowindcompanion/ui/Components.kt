@@ -1,6 +1,13 @@
 package nl.myquest.nowindcompanion.ui
 
 import android.content.Context
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.unit.Dp
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -149,3 +156,27 @@ fun Context.appVersionName(): String =
     } catch (e: Exception) {
         "?"
     }
+
+private const val LED_IDLE = 0.25f
+private val LedRed = Color(0xFFFF3B30)
+
+// a red LED that flashes briefly whenever 'pulses' changes and fades back to a dim idle glow
+@Composable
+fun ActivityLight(pulses: Long, modifier: Modifier = Modifier, size: Dp = 12.dp) {
+    val glow = remember { Animatable(LED_IDLE) }
+    LaunchedEffect(pulses) {
+        if (pulses == 0L) return@LaunchedEffect
+        glow.snapTo(1f)
+        delay(80)
+        glow.animateTo(LED_IDLE, tween(durationMillis = 600))
+    }
+    Box(
+        modifier
+            .size(size)
+            .drawBehind {
+                val lit = (glow.value - LED_IDLE) / (1f - LED_IDLE)
+                drawCircle(LedRed.copy(alpha = 0.5f * lit), radius = this.size.minDimension)
+                drawCircle(LedRed.copy(alpha = glow.value), radius = this.size.minDimension / 2)
+            }
+    )
+}

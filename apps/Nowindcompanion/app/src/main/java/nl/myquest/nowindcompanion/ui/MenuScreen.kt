@@ -1,6 +1,12 @@
 package nl.myquest.nowindcompanion.ui
 
 import androidx.compose.foundation.Image
+import nl.myquest.nowindcompanion.formatSpeed
+import nl.myquest.nowindcompanion.RecentTransfers
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,6 +60,8 @@ data class MenuEntry(
 fun MenuScreen(
     connection: ConnectionState,
     hostedDisk: String?,
+    commands: Long,
+    recentReads: RecentTransfers,
     settingsSummary: String,
     onNowind: () -> Unit,
     onBrowse: () -> Unit,
@@ -72,7 +80,7 @@ fun MenuScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            HeroHeader(connection, hostedDisk)
+            HeroHeader(connection, hostedDisk, commands, recentReads)
             Spacer(Modifier.height(4.dp))
             for (entry in entries) {
                 MenuCard(entry)
@@ -89,7 +97,7 @@ fun MenuScreen(
 }
 
 @Composable
-private fun HeroHeader(connection: ConnectionState, hostedDisk: String?) {
+private fun HeroHeader(connection: ConnectionState, hostedDisk: String?, commands: Long, recentReads: RecentTransfers) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -115,6 +123,13 @@ private fun HeroHeader(connection: ConnectionState, hostedDisk: String?) {
                         1f to Color.Black.copy(alpha = 0.95f)
                     )
                 )
+        )
+        ActivityChip(
+            commands,
+            recentReads,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(14.dp)
         )
         ConnectionChip(
             connection,
@@ -172,6 +187,33 @@ private fun MenuCard(entry: MenuEntry) {
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+// the activity light and the read speed over the last 20 seconds of transfers
+@Composable
+private fun ActivityChip(commands: Long, recentReads: RecentTransfers, modifier: Modifier = Modifier) {
+    // the window moves with time, so recompute it regularly instead of only when a transfer ends
+    val speed by produceState<Double?>(initialValue = null, recentReads) {
+        while (true) {
+            value = recentReads.activeSpeed()
+            delay(500)
+        }
+    }
+    Surface(
+        modifier = modifier,
+        shape = CircleShape,
+        color = Color.Black.copy(alpha = 0.45f),
+        contentColor = Color.White
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ActivityLight(commands, size = 10.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(speed?.let { formatSpeed(it) } ?: "Idle", style = MaterialTheme.typography.labelLarge)
         }
     }
 }
