@@ -75,6 +75,7 @@ class RemoteListingTest {
     fun nowind_api_msx2plus_uses_a_literal_plus() {
         assertEquals("https://x/nowind.php?type=DSK&msx=2+", nowindApiListUrl("https://x/nowind.php", MsxFilter.Msx2Plus))
         assertEquals("https://x/nowind.php?type=DSK", nowindApiListUrl("https://x/nowind.php", MsxFilter.All))
+        assertEquals("https://x/nowind.php?type=DSK&msx=turbo-r", nowindApiListUrl("https://x/nowind.php", MsxFilter.TurboR))
     }
 
     @Test

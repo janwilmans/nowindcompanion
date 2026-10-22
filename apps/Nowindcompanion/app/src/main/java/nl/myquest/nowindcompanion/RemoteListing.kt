@@ -75,12 +75,13 @@ fun parseNowindApiListing(text: String, listUrl: String): List<RemoteEntry> {
     }
 }
 
-// the MSX generations the Nowind API can filter on; its 'turbo-r' filter never matches, so it is left out
+// the MSX generations the Nowind API can filter on
 enum class MsxFilter(val label: String, val param: String?) {
     All("All", null),
     Msx1("MSX1", "1"),
     Msx2("MSX2", "2"),
     Msx2Plus("MSX2+", "2+"),    // the API needs a literal '+', '%2B' is ignored and lists everything
+    TurboR("Turbo R", "turbo-r"),
 }
 
 fun nowindApiListUrl(baseUrl: String, filter: MsxFilter): String =
