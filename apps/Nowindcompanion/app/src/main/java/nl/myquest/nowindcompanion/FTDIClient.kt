@@ -76,6 +76,7 @@ class FTDIClient(
     private val responseQueue = ResponseQueue()  // Host >> MSX
 
     private var diskimage: ByteArray = ByteArray(1024 * 1024)
+    private var diskChanged = true
 
     fun readDisk(diskData: ByteArray, position: Int, size: Int): List<Int> {
         require(position >= 0 && position < diskData.size) { "Invalid position" }
@@ -298,7 +299,12 @@ class FTDIClient(
                     // ignored intentionally
                 }
 
-                else -> throw e
+                is kotlinx.coroutines.CancellationException -> throw e
+                else -> {
+                    println("readHandler exception: $e, queue: ${commandQueue}")
+                    Log.e("Nowind", "Nowind command failed:$e, %d bytes remaining in queue were removed.".format(commandQueue.size()))
+                    commandQueue.clear()
+                }
             }
         }
     }
@@ -379,13 +385,18 @@ class FTDIClient(
                 val address = command.getDestinationAddress();
                 var sector = command.getStartSector()
                 val diskimageReadPosition = sector * 512;
+                if (sectorAmount == 0 || diskimageReadPosition < 0 || diskimageReadPosition + size > diskimage.size) {
+                    // no response is legal, the MSX will time out and report a disk error (like the C++ host)
+                    println("DSKIO read of $sectorAmount sectors at sector $sector is outside the disk image, ignored")
+                    return
+                }
                 val data = readDisk(diskimage, diskimageReadPosition, size)
 
                 val start = System.currentTimeMillis()
                 println("DSKIO read transfer sector $sector to address ${String.format("0x%04X", address)}, $sectorAmount sectors")
                 ReadOperation(address, data).execute(responseQueue, commandQueue)
                 val duration = System.currentTimeMillis() - start
-                val kbs = size / duration
+                val kbs = size / maxOf(duration, 1)
                 println("  DSKIO read done in ${duration} ms, with is ${kbs} Kb/s")
             }
 
@@ -395,11 +406,16 @@ class FTDIClient(
                 //responseQueue.add(255)  // Dummy
 
                 responseQueue.addHeader()
-                responseQueue.add(255) // Say 'changed'
-                val data = readDisk(diskimage, 1, 1)
-                val mediaDescriptor = data.get(0)
-                println("DSKCHG returns mediaDescriptor ${mediaDescriptor}")
-                responseQueue.add(mediaDescriptor) // return media descriptor
+                if (diskChanged) {
+                    diskChanged = false
+                    responseQueue.add(255) // changed
+                    val mediaDescriptor = readDisk(diskimage, 1, 1)[0]
+                    println("DSKCHG returns mediaDescriptor ${mediaDescriptor}")
+                    responseQueue.add(mediaDescriptor) // return media descriptor
+                } else {
+                    responseQueue.add(0)   // not changed
+                    responseQueue.add(255) // dummy
+                }
             }
 
             NowindCommand.GETDPB -> getDpb(command)
@@ -515,6 +531,7 @@ class FTDIClient(
                     byteArrayOutputStream.write(buffer, 0, len)
                 }
                 diskimage = byteArrayOutputStream.toByteArray()
+                diskChanged = true
                 firstDiskLoaded = true
             }
             entry = zipInputStream.nextEntry
