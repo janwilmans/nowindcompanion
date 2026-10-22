@@ -117,8 +117,9 @@ class BrowseViewModel : ViewModel() {
         loadJob = viewModelScope.launch {
             _listing.value = try {
                 val entries = withContext(Dispatchers.IO) {
-                    val text = fetchText(url)
-                    if (source.kind == SourceKind.NowindApi) parseNowindApiListing(text, url) else parseHtmlListing(text, url)
+                    val fetched = fetchText(url)
+                    if (source.kind == SourceKind.NowindApi) parseNowindApiListing(fetched.text, url)
+                    else parseHtmlListing(fetched.text, fetched.url)
                 }.sortedWith(compareByDescending<RemoteEntry> { it.isDirectory }.thenBy { it.name.lowercase() })
                 cache[url] = entries
                 ListingState.Loaded(entries)

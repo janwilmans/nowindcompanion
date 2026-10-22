@@ -130,10 +130,13 @@ private fun AddSourceDialog(existing: List<String>, onDismiss: () -> Unit, onAdd
     var detection by remember { mutableStateOf<Detection?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val url = normalizeSourceUrl(text)
+    // the url that was checked; read from the text field at click time, a value computed during composition can be stale
+    var checkedUrl by remember { mutableStateOf("") }
 
     fun check() {
         if (text.isBlank()) return
+        val url = normalizeSourceUrl(text)
+        checkedUrl = url
         checking = true
         error = null
         scope.launch {
@@ -201,10 +204,10 @@ private fun AddSourceDialog(existing: List<String>, onDismiss: () -> Unit, onAdd
         confirmButton = {
             val found = detection
             when {
-                found != null -> TextButton(onClick = { onAdd(DiskSource(url, found.kind)) }) { Text("Add") }
+                found != null -> TextButton(onClick = { onAdd(DiskSource(found.url, found.kind)) }) { Text("Add") }
                 // some sites refuse automated requests now and then; keep the url, Browse reads it as a web page
-                error != null -> TextButton(onClick = { onAdd(DiskSource(url, SourceKind.WebPage)) }) { Text("Add anyway") }
-                else -> TextButton(onClick = ::check, enabled = text.isNotBlank() && !checking) { Text("Check") }
+                error != null -> TextButton(onClick = { onAdd(DiskSource(checkedUrl, SourceKind.WebPage)) }) { Text("Add anyway") }
+                else -> TextButton(onClick = { check() }, enabled = text.isNotBlank() && !checking) { Text("Check") }
             }
         },
         dismissButton = {

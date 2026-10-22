@@ -57,13 +57,14 @@ fun normalizeSourceUrl(input: String): String {
 
 private val NOWIND_LINE = Regex("""^[^\t<>]+\t\d+$""")
 
-data class Detection(val kind: SourceKind, val entries: Int)
+// url is where the source really is, after redirects (e.g. 'site/nowind' -> 'site/nowind/')
+data class Detection(val kind: SourceKind, val entries: Int, val url: String)
 
 // decides how a source has to be read, from the response to its url
 fun classifySource(body: String, url: String): Detection {
     val lines = body.lineSequence().filter { it.isNotBlank() }.take(5).toList()
     if (lines.isNotEmpty() && lines.all { NOWIND_LINE.matches(it) }) {
-        return Detection(SourceKind.NowindApi, parseNowindApiListing(body, url).size)
+        return Detection(SourceKind.NowindApi, parseNowindApiListing(body, url).size, url)
     }
     if (!body.contains('<')) {
         throw IOException("not a web page or Nowind API")
@@ -71,20 +72,24 @@ fun classifySource(body: String, url: String): Detection {
     val title = Jsoup.parse(body).run { title() + " " + select("h1, h2").text() }
     val entries = parseHtmlListing(body, url)
     val isIndex = title.contains("Index of", ignoreCase = true) || entries.any { it.isDirectory }
-    return Detection(if (isIndex) SourceKind.DirectoryListing else SourceKind.WebPage, entries.size)
+    return Detection(if (isIndex) SourceKind.DirectoryListing else SourceKind.WebPage, entries.size, url)
 }
 
 // blocking, call from Dispatchers.IO
-fun detectSource(url: String): Detection = classifySource(fetchText(url), url)
+fun detectSource(url: String): Detection = fetchText(url).let { classifySource(it.text, it.url) }
 
-fun fetchText(url: String): String {
+data class Fetched(val text: String, val url: String)
+
+// blocking; url in the result is the final one after redirects, relative links must be resolved against it
+fun fetchText(url: String): Fetched {
     val connection = openHttpConnection(url)
     try {
         val code = connection.responseCode
         if (code != HttpURLConnection.HTTP_OK) {
             throw IOException("HTTP $code" + if (code == 403) " (the site refuses this app)" else "")
         }
-        return connection.inputStream.bufferedReader().use { it.readText() }
+        val text = connection.inputStream.bufferedReader().use { it.readText() }
+        return Fetched(text, connection.url.toString())
     } finally {
         connection.disconnect()
     }
