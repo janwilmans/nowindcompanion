@@ -54,6 +54,7 @@ data class MenuEntry(
 fun MenuScreen(
     connection: ConnectionState,
     hostedDisk: String?,
+    settingsSummary: String,
     onNowind: () -> Unit,
     onBrowse: () -> Unit,
     onSettings: () -> Unit,
@@ -61,7 +62,7 @@ fun MenuScreen(
     val entries = listOf(
         MenuEntry(Icons.Rounded.Usb, "Nowind", "Interface status and device information", onNowind),
         MenuEntry(Icons.Rounded.TravelExplore, "Browse", "Find and download disk images from file-hunter.com", onBrowse),
-        MenuEntry(Icons.Rounded.Settings, "Settings", "DOS2 and debug information", onSettings),
+        MenuEntry(Icons.Rounded.Settings, "Settings", settingsSummary, onSettings),
     )
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(

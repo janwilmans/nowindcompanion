@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.launch
 import nl.myquest.nowindcompanion.NowindApp
 import nl.myquest.nowindcompanion.Settings
 
@@ -49,6 +50,7 @@ fun NowindNavHost(app: NowindApp) {
             MenuScreen(
                 connection = connection,
                 hostedDisk = hostedDisk,
+                settingsSummary = "DOS2 ${if (settings.enableDos2) "on" else "off"}  ·  debug information ${if (settings.debugEnabled) "on" else "off"}",
                 onNowind = { nav.navigate(Routes.NOWIND) },
                 onBrowse = { nav.navigate(Routes.BROWSE) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
@@ -64,7 +66,14 @@ fun NowindNavHost(app: NowindApp) {
             )
         }
         composable(Routes.BROWSE) { PlaceholderScreen("Browse", back) }
-        composable(Routes.SETTINGS) { PlaceholderScreen("Settings", back) }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
+                settings = settings,
+                onEnableDos2 = { app.appScope.launch { app.settings.setEnableDos2(it) } },
+                onDebugEnabled = { app.appScope.launch { app.settings.setDebugEnabled(it) } },
+                onBack = back,
+            )
+        }
         composable(Routes.DEBUG) { DebugScreen(messages, settings.debugEnabled, back) }
     }
 }
