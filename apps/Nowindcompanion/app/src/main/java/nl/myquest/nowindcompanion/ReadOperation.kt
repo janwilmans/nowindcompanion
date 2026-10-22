@@ -41,7 +41,7 @@ class ReadOperation(private val startAddress: Int, private val data: List<Int>) 
         val next = commandQueue.next()
         val result = (next == block.marker)
         if (!result) {
-            println("verify for head marker ${block.marker} failed, tail marker received: ${next}")
+            Debug.log("verify for head marker ${block.marker} failed, tail marker received: ${next}")
         }
         return result
     }
@@ -117,7 +117,7 @@ class ReadOperation(private val startAddress: Int, private val data: List<Int>) 
             }
         }
         if (retransmissions > 0) {
-            println("ReadOperation done, ${blocksSent} blocks with ${retransmissions} retransmission(s).")
+            Debug.log("ReadOperation done, ${blocksSent} blocks with ${retransmissions} retransmission(s).")
         }
         responseQueue.addHeader()
         responseQueue.add(BlockRead.EXIT.value)

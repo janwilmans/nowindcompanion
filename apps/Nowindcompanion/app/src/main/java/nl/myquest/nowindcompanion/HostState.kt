@@ -19,6 +19,7 @@ class HostState {
     val hostedDisk = MutableStateFlow<String?>(null)
 
     fun write(message: String) {
+        if (!Debug.enabled) return
         println(message)
         messages.update { it.add(message) }
     }

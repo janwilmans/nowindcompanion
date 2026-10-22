@@ -2,7 +2,6 @@ package nl.myquest.nowindcompanion
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.util.Log
 import com.ftdi.j2xx.D2xxManager
 import com.ftdi.j2xx.D2xxManager.FtDeviceInfoListNode
 import com.ftdi.j2xx.FT_Device
@@ -52,6 +51,10 @@ data class DeviceInfo(
     val description: String = ""
 )
 
+// the reply to GETDOSVERSION: 2 enables DOS2, which only exists on MSX2 and newer, 1 enables DOS1
+fun dosVersionFor(msxIdByte: Int, enableDos2: Boolean): Int =
+    if (enableDos2 && msxIdByte >= MsxVersion.Two.value) 2 else 1
+
 class FTDIClient(
     private val context: Context,
     private val state: HostState,
@@ -63,6 +66,9 @@ class FTDIClient(
 
     private var diskimage: ByteArray = ByteArray(1024 * 1024)
     private var diskChanged = true
+
+    @Volatile
+    var enableDos2 = false
 
     @Volatile
     private var running = false
@@ -162,10 +168,11 @@ class FTDIClient(
 
     // logs the first bytes of every chunk exchanged with the interface (RX = MSX -> host, TX = host -> MSX)
     private fun logRawBytes(direction: String, bytes: List<Int>) {
+        if (!Debug.enabled) return
         val maxShown = 32
         val shown = bytes.take(maxShown).joinToString(" ") { "%02X".format(it) }
         val more = if (bytes.size > maxShown) " ... (+${bytes.size - maxShown} more)" else ""
-        println("$direction ${bytes.size} bytes: $shown$more")
+        Debug.log("$direction ${bytes.size} bytes: $shown$more")
     }
 
     private suspend fun open_and_run_ftdi_io() {
@@ -206,7 +213,7 @@ class FTDIClient(
             val receivedBytes = ftdiDevice.queueStatus
             if (receivedBytes == -1) // we lost the connection
             {
-                println("io: receivedBytes -1, connection lost...")
+                Debug.log("io: receivedBytes -1, connection lost...")
                 return
             }
             //println("poll.. queueStatus...")
@@ -233,7 +240,7 @@ class FTDIClient(
                 ftdiDevice.write(response)
 
             } catch (e: Exception) {
-                Log.e("Nowind", "run_ftdi_io exception: ${e.message}")
+                Debug.error("run_ftdi_io exception: ${e.message}")
             }
         }
     }
@@ -281,23 +288,23 @@ class FTDIClient(
         } catch (e: Exception) {
             when (e) {
                 is TimeoutException -> {
-                    println("readHandler TimeoutException: ${e.message}, queue: ${commandQueue}")
-                    Log.e("Nowind", "${e.message}, %d bytes remaining in queue were removed.".format(commandQueue.size()))
+                    Debug.log("readHandler TimeoutException: ${e.message}, queue: ${commandQueue}")
+                    Debug.error("${e.message}, %d bytes remaining in queue were removed.".format(commandQueue.size()))
                     commandQueue.clear()
                     // ignored intentionally
                 }
 
                 is IOException -> {
-                    println("readHandler IOException: ${e.message}, queue: ${commandQueue}")
-                    Log.e("Nowind", "Nowind command de-sync, %d bytes remaining in queue were removed.".format(commandQueue.size()))
+                    Debug.log("readHandler IOException: ${e.message}, queue: ${commandQueue}")
+                    Debug.error("Nowind command de-sync, %d bytes remaining in queue were removed.".format(commandQueue.size()))
                     commandQueue.clear()
                     // ignored intentionally
                 }
 
                 is kotlinx.coroutines.CancellationException -> throw e
                 else -> {
-                    println("readHandler exception: $e, queue: ${commandQueue}")
-                    Log.e("Nowind", "Nowind command failed:$e, %d bytes remaining in queue were removed.".format(commandQueue.size()))
+                    Debug.log("readHandler exception: $e, queue: ${commandQueue}")
+                    Debug.error("Nowind command failed:$e, %d bytes remaining in queue were removed.".format(commandQueue.size()))
                     commandQueue.clear()
                 }
             }
@@ -306,7 +313,7 @@ class FTDIClient(
 
     private fun notImplemented(command: Command) {
         // the C++ host ignores these without a reply, the MSX will time out
-        println("* command not implemented: ${command.toEnum()} (0x%02X), ignored, registers: $command".format(command.cmd))
+        Debug.log("* command not implemented: ${command.toEnum()} (0x%02X), ignored, registers: $command".format(command.cmd))
     }
 
     private fun le16(offset: Int): Int = (diskimage[offset].toInt() and 0xFF) + 256 * (diskimage[offset + 1].toInt() and 0xFF)
@@ -326,7 +333,7 @@ class FTDIClient(
             numberOfSectors = le16(32) + 65536 * le16(34)
         }
         if (bytesPerSector < 32 || sectorsPerCluster == 0) {
-            println("GETDPB: invalid boot sector, ignored")
+            Debug.log("GETDPB: invalid boot sector, ignored")
             return
         }
 
@@ -374,7 +381,7 @@ class FTDIClient(
                 // for example, this would be expected when a disk number is requested that is unknown
                 if ((command.f and 1) == 1)   // CF (Carry Flag) means "Write" if set and "Read" when not set.
                 {
-                    println("Writing not implemented!")
+                    Debug.log("Writing not implemented!")
                     return
                 }
 
@@ -387,17 +394,17 @@ class FTDIClient(
                 val diskimageReadPosition = sector * 512;
                 if (sectorAmount == 0 || diskimageReadPosition < 0 || diskimageReadPosition + size > diskimage.size) {
                     // no response is legal, the MSX will time out and report a disk error (like the C++ host)
-                    println("DSKIO read of $sectorAmount sectors at sector $sector is outside the disk image, ignored")
+                    Debug.log("DSKIO read of $sectorAmount sectors at sector $sector is outside the disk image, ignored")
                     return
                 }
                 val data = readDisk(diskimage, diskimageReadPosition, size)
 
                 val start = System.currentTimeMillis()
-                println("DSKIO read transfer sector $sector to address ${String.format("0x%04X", address)}, $sectorAmount sectors")
+                Debug.log("DSKIO read transfer sector $sector to address ${String.format("0x%04X", address)}, $sectorAmount sectors")
                 ReadOperation(address, data).execute(responseQueue, commandQueue)
                 val duration = System.currentTimeMillis() - start
                 val kbs = size / maxOf(duration, 1)
-                println("  DSKIO read done in ${duration} ms, with is ${kbs} Kb/s")
+                Debug.log("  DSKIO read done in ${duration} ms, with is ${kbs} Kb/s")
             }
 
             NowindCommand.DSKCHG -> {
@@ -410,7 +417,7 @@ class FTDIClient(
                     diskChanged = false
                     responseQueue.add(255) // changed
                     val mediaDescriptor = readDisk(diskimage, 1, 1)[0]
-                    println("DSKCHG returns mediaDescriptor ${mediaDescriptor}")
+                    Debug.log("DSKCHG returns mediaDescriptor ${mediaDescriptor}")
                     responseQueue.add(mediaDescriptor) // return media descriptor
                 } else {
                     responseQueue.add(0)   // not changed
@@ -450,25 +457,17 @@ class FTDIClient(
                 val msxIdByte = command.a // MSX version number, 0=MSX1, 1=MSX2, 2=MSX2+, 3=MSX Turbo R
 
                 // send back header + "1" to enable DOS1 and "2" to enable DOS2
-                // while this might be a configuration option, it makes sense to enable DOS2 only on MSX2
-                // (because DOS2 is build-in in MSX Turbo R)
-                // HOWEVER, some games, like Puyo Puyo, dont see to be compatible with the way
-                // the nowind ROM 'skips' the DOS2 initialization, so we need to investigate that
+                // some games, like Puyo Puyo, dont see to be compatible with the way
+                // the nowind ROM 'skips' the DOS2 initialization, so DOS2 is a setting that is off by default
                 responseQueue.addHeader()
-                if (msxIdByte == MsxVersion.Two.value) {
-                    // 2 will enable dos2, but we will disable it for now,
-                    // as games will not like dos2 and we have no option to turn it off yet
-                    responseQueue.add(1)
-                } else {
-                    responseQueue.add(1)
-                }
+                responseQueue.add(dosVersionFor(msxIdByte, enableDos2))
             }
 
             // the MSX asks whether the host has a command waiting for it to execute
             NowindCommand.CMDREQUEST -> {
                 val commandId = command.getB()
                 val commandArgument = command.getC()
-                println("- CMD REQUESTED: %X with argument %X".format(commandId, commandArgument))
+                Debug.log("- CMD REQUESTED: %X with argument %X".format(commandId, commandArgument))
 
                 responseQueue.addHeader()
                 responseQueue.add(0) // no more commands / not implemented
@@ -479,7 +478,7 @@ class FTDIClient(
             NowindCommand.CPUINFO -> notImplemented(command)
             NowindCommand.COMMAND -> notImplemented(command)
             NowindCommand.STDOUT -> notImplemented(command)
-            null -> println("* unknown command: %X ignored".format(command.cmd))
+            null -> Debug.log("* unknown command: %X ignored".format(command.cmd))
         }
 
 
@@ -503,7 +502,7 @@ class FTDIClient(
         }
 
     } catch (e: Exception) {
-        println("### Exception: $e")
+        Debug.log("### Exception: $e")
     }
 
 

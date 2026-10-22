@@ -2,16 +2,32 @@ package nl.myquest.nowindcompanion
 
 import android.app.Application
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 // owns everything that must live as long as the process, independent of activity re-creation
 class NowindApp : Application() {
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val state = HostState()
+    lateinit var settings: SettingsRepository
+        private set
     lateinit var client: FTDIClient
         private set
 
     override fun onCreate() {
         super.onCreate()
+        settings = SettingsRepository(this)
         client = FTDIClient(this, state)
+
+        // FTDIClient reads these from its own thread, so mirror the persisted values into volatile fields
+        appScope.launch {
+            settings.settings.collect {
+                Debug.enabled = it.debugEnabled
+                client.enableDos2 = it.enableDos2
+            }
+        }
         client.start()
     }
 }

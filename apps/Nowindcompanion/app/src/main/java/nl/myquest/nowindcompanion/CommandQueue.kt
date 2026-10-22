@@ -97,7 +97,7 @@ class CommandQueue(
                 }
             }
             if (discardedBytes > 0) {
-                println("waitFor discarded $discardedBytes bytes.")
+                Debug.log("waitFor discarded $discardedBytes bytes.")
             }
         } catch (e: TimeoutException) {
             throw TimeoutException(e.message + ", discarding $discardedBytes bytes")
