@@ -1,14 +1,15 @@
-"""Generates the Nowind Companion launcher icon from one shape description.
+"""Generates the Nowind Companion launcher icon from one pixel-art description.
 
 Writes the adaptive icon layers (vector drawables), the legacy .webp icons for Android 5-7 and the
 512x512 Play Store icon, so they always look the same.
 
     python make_launcher_icon.py        (needs Pillow: pip install pillow)
 
-The design follows the Nowind cartridge: a dark body with the light blue label, a USB plug on the label,
-the green edge connector and the red activity light, on Nowind blue.
-Coordinates are in the 108x108 adaptive icon viewport; the safe zone is a circle of radius 33 around the
-centre, everything important stays inside it.
+The design is a retro 8-bit take on the Nowind cartridge (nowindv1.jpg): a dark body with the light blue
+label, a USB plug on the label shooting a rainbow trail, the blue name strip and the round hole, on a
+dithered Nowind blue background with a few sparkles.
+The 108x108 adaptive icon viewport is a grid of 36x36 pixels of 3 units each; the safe zone is a circle of
+radius 11 pixels around the centre, everything important stays inside it.
 """
 from pathlib import Path
 
@@ -18,69 +19,125 @@ APP = Path(__file__).resolve().parent.parent
 RES = APP / "app" / "src" / "main" / "res"
 STORE = APP / "store"
 
+GRID = 36
+PIXEL = 108 // GRID
 
-# shape: (kind, x0, y0, x1, y1, radius, color, alpha)   kind is 'rect' (rounded) or 'circle' (box = bounds)
-def rect(x0, y0, x1, y1, r, color, alpha=1.0):
-    return ("rect", x0, y0, x1, y1, r, color, alpha)
+PALETTE = {
+    "K": "#0B0C12",     # outline
+    "h": "#4A4E5C",     # highlight on the top edge
+    "d": "#363943",     # frame around the label
+    "D": "#2A2C33",     # cartridge body
+    "e": "#1F2127",     # body shading
+    "g": "#8A90A0",     # hole
+    "G": "#D5D9E2",     # hole highlight
+    "L": "#C3CDFF",     # label
+    "l": "#A9B6F4",     # label tile lines
+    "B": "#3B4FC0",     # name strip
+    "W": "#FFFFFF",
+    "C": "#1C1D24",     # USB plug housing and cable
+    "c": "#454A5A",     # ribs on the housing
+    "S": "#E3E7F2",     # USB plug metal
+    "s": "#8890A8",
+    "R": "#FF3B30",     # rainbow trail
+    "O": "#FF9F0A",
+    "Y": "#FFE14D",
+    "y": "#FFF3A8",     # sparkle
+}
 
-
-def circle(cx, cy, r, color, alpha=1.0):
-    return ("circle", cx - r, cy - r, cx + r, cy + r, r, color, alpha)
-
-
-BACKGROUND = [
-    rect(0, 0, 108, 108, 0, "#1A2F80"),
-    circle(28, 18, 78, "#2847AA"),
+# the cartridge, its top left pixel goes at CARTRIDGE_AT
+CARTRIDGE_AT = (8, 9)
+CARTRIDGE = [
+    ".KKKKKCARTRIDGE_AT = (9, 10)
+CARTRIDGE = [
+    ".KKKKKKKKKKKKKKKK.",
+    "KhhhhhhhhhhhhhhhhK",
+    "Kd" + "LLlLLLLLLLlLLL" + "dK",
+    "Kd" + "LLlLLKKKCCCCLL" + "dK",
+    "Kd" + "RRRRRWSSCcCcLL" + "dK",
+    "Kd" + "OOOOOSsSCcCcCC" + "dK",
+    "Kd" + "YYYYYSSSCcCcLL" + "dK",
+    "Kd" + "LLlLLKKKCCCCLL" + "dK",
+    "Kd" + "LLlLLLLLLLlLLL" + "dK",
+    "Kd" + "BWWWBWBBBBWBWB" + "dK",
+    "KDDDDDDDDDDDDDDDDK",
+    "KDDDDDDDDDDDDDDDDK",
+    "KDGgDDDDDDDDDDDDDK",
+    "KDggDDDDDDDDDDDDDK",
+    "KeeeeeeeeeeeeeeeeK",
+    ".KKKKKKKKKKKKKKKK.",
 ]
 
-LABEL = "#C3CDFF"
-CONTACTS = [rect(38.6 + i * 3.6, 69.4, 40.0 + i * 3.6, 72.0, 0, "#E8C15A") for i in range(9)]
-FOREGROUND = [
-    rect(31, 34.5, 77, 78.5, 5, "#000000", 0.28),      # shadow
-    rect(31, 32, 77, 76, 5, "#2A2C33"),                 # cartridge body
-    rect(31, 32, 77, 40, 5, "#363943"),                 # lighter top edge
-    rect(31, 36, 77, 40, 0, "#363943"),
-    rect(35, 36, 73, 58, 3, LABEL),                     # label
-    rect(35, 52, 73, 58, 3, "#5C6FD6"),                 # blue strip at the bottom of the label
-    rect(35, 52, 73, 55, 0, "#5C6FD6"),
-    rect(45, 40, 63, 49, 1.5, "#24357F"),               # USB plug
-    rect(49, 43, 52, 45.5, 0, LABEL),
-    rect(56, 43, 59, 45.5, 0, LABEL),
-    rect(37, 68, 71, 72.6, 1, "#2F8F5B"),               # edge connector
-    *CONTACTS,
-    circle(39, 63.5, 3.8, "#FF3B30", 0.35),             # activity light
-    circle(39, 63.5, 2.2, "#FF3B30"),
-]
-
-# themed icon (Android 13+): one colour, the label and the plug holes are cut out with the even-odd rule
-MONOCHROME = [
-    rect(31, 32, 77, 76, 5, "#000000"),
-    rect(35, 36, 73, 58, 3, "#000000"),
-    rect(45, 40, 63, 49, 1.5, "#000000"),
-    rect(49, 43, 52, 45.5, 0, "#000000"),
-    rect(56, 43, 59, 45.5, 0, "#000000"),
-]
+# sparkles: (x, y, big)
+SPARKLES = [(9, 10, True), (27, 25, True), (25, 8, False), (8, 21, False)]
 
 
-def fmt(v):
-    return ("%.2f" % v).rstrip("0").rstrip(".")
+def sparkle(x, y, big):
+    pixels = {(x, y): "W"}
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        pixels[(x + dx, y + dy)] = "y"
+        if big:
+            pixels[(x + 2 * dx, y + 2 * dy)] = "y"
+    return pixels
 
 
-def path_data(shape):
-    kind, x0, y0, x1, y1, r, _, _ = shape
-    if kind == "circle":
-        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-        return f"M{fmt(cx - r)},{fmt(cy)}a{fmt(r)},{fmt(r)} 0 1,0 {fmt(2 * r)},0a{fmt(r)},{fmt(r)} 0 1,0 {fmt(-2 * r)},0z"
-    w, h = x1 - x0, y1 - y0
-    if r == 0:
-        return f"M{fmt(x0)},{fmt(y0)}h{fmt(w)}v{fmt(h)}h{fmt(-w)}z"
-    a = f"a{fmt(r)},{fmt(r)} 0 0,1"
-    return (f"M{fmt(x0 + r)},{fmt(y0)}h{fmt(w - 2 * r)}{a} {fmt(r)},{fmt(r)}v{fmt(h - 2 * r)}"
-            f"{a} {fmt(-r)},{fmt(r)}h{fmt(-(w - 2 * r))}{a} {fmt(-r)},{fmt(-r)}v{fmt(-(h - 2 * r))}"
-            f"{a} {fmt(r)},{fmt(-r)}z")
+def background():
+    """Nowind blue, lighter towards the top left with a dithered band in between"""
+    pixels = {}
+    for y in range(GRID):
+        for x in range(GRID):
+            d = x + y
+            light = d < 26 or (d < 30 and x % 2 == 0) or (d < 34 and x % 2 == 0 and y % 2 == 0)
+reground():
+    pixels = {}
+    x0, y0 = CARTRIDGE_AT
+    for y, row in enumerate(CARTRIDGE):
+        for x, key in enumerate(row):
+            if key != ".":
+                pixels[(x0 + x, y0 + y)] = PALETTE[key]
+    # hard drop shadow one pixel down and right
+    shadow = {(x + 1, y + 1): "#000000" for (x, y) in pixels if (x + 1, y + 1) not in pixels}
+    for (x, y, big) in SPARKLES:
+        for p, key in sparkle(x, y, big).items():
+            pixels[p] = PALETTE[key]
+    return shadow, pixels
 
 
-def vector(shapes, comment, even_odd=False):
+def monochrome():
+    """themed icon (Android 13+): the cartridge body and the USB plug, the label stays open"""
+    x0, y0 = CARTRIDGE_AT
+    return {(x0 + x, y0 + y) for y, row in enumerate(CARTRIDGE) for x, key in enumerate(row)
+            if key in "KhdDeCcSsW"}
+
+
+def runs(cells):
+    """merges a set of pixels into horizontal runs (x, y, length)"""
+    result = []
+    for y in range(GRID):
+        x = 0
+        while x < GRID:
+            if (x, y) in cells:
+                start = x
+                while (x, y) in cells:
+                    x += 1
+                result.append((start, y, x - start))
+            else:
+                x += 1
+    return result
+
+
+def path_data(cells):
+    return "".join(f"M{x * PIXEL},{y * PIXEL}h{n * PIXEL}v{PIXEL}h{-n * PIXEL}z" for x, y, n in runs(cells))
+
+
+def by_color(pixels):
+    colors = {}
+    for p, color in pixels.items():
+        colors.setdefault(color, set()).add(p)
+    return colors
+
+
+def vector(layers, comment):
+    """layers: list of (color, alpha, cells)"""
     lines = [
         '<?xml version="1.0" encoding="utf-8"?>',
         f"<!-- {comment}, generated by tools/make_launcher_icon.py -->",
@@ -90,45 +147,42 @@ def vector(shapes, comment, even_odd=False):
         '    android:viewportWidth="108"',
         '    android:viewportHeight="108">',
     ]
-    if even_odd:
-        lines += [
-            "    <path",
-            '        android:fillColor="#FF000000"',
-            '        android:fillType="evenOdd"',
-            f'        android:pathData="{"".join(path_data(s) for s in shapes)}" />',
-        ]
-    else:
-        for shape in shapes:
-            alpha = shape[7]
-            lines += ["    <path", f'        android:fillColor="{shape[6]}"']
-            if alpha < 1:
-                lines.append(f'        android:fillAlpha="{fmt(alpha)}"')
-            lines.append(f'        android:pathData="{path_data(shape)}" />')
+    for color, alpha, cells in layers:
+        lines += ["    <path", f'        android:fillColor="{color}"']
+        if alpha < 1:
+            lines.append(f'        android:fillAlpha="{alpha}"')
+        lines.append(f'        android:pathData="{path_data(cells)}" />')
     lines.append("</vector>")
     return "\n".join(lines) + "\n"
 
 
-def render(size, crop=(18, 90)):
-    """renders background + foreground, the part crop[0]..crop[1] of the viewport fills the image"""
-    oversample = 4
-    full = size * oversample
-    scale = full / (crop[1] - crop[0])
+SHADOW_ALPHA = 0.35
 
-    def box(s):
-        return [(s[1] - crop[0]) * scale, (s[2] - crop[0]) * scale, (s[3] - crop[0]) * scale, (s[4] - crop[0]) * scale]
 
+def background_layers():
+    return [(color, 1, cells) for color, cells in sorted(by_color(background()).items())]
+
+
+def foreground_layers():
+    shadow, pixels = foreground()
+    return [("#000000", SHADOW_ALPHA, set(shadow))] + [(c, 1, cells) for c, cells in sorted(by_color(pixels).items())]
+
+
+def render(size, crop=(6, 30)):
+    """renders background + foreground, the pixels crop[0]..crop[1] of the grid fill the image"""
+    scale = 8 if size % (crop[1] - crop[0]) else size // (crop[1] - crop[0])
+    full = (crop[1] - crop[0]) * scale
     image = Image.new("RGBA", (full, full), (0, 0, 0, 0))
-    for shape in BACKGROUND + FOREGROUND:
+    for color, alpha, cells in background_layers() + foreground_layers():
         layer = Image.new("RGBA", (full, full), (0, 0, 0, 0))
         draw = ImageDraw.Draw(layer)
-        color = shape[6]
-        fill = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5)) + (round(255 * shape[7]),)
-        if shape[0] == "circle":
-            draw.ellipse(box(shape), fill=fill)
-        else:
-            draw.rounded_rectangle(box(shape), radius=shape[5] * scale, fill=fill)
+        fill = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5)) + (round(255 * alpha),)
+        for x, y in cells:
+            if crop[0] <= x < crop[1] and crop[0] <= y < crop[1]:
+                px, py = (x - crop[0]) * scale, (y - crop[0]) * scale
+                draw.rectangle([px, py, px + scale - 1, py + scale - 1], fill=fill)
         image = Image.alpha_composite(image, layer)
-    return image.resize((size, size), Image.LANCZOS)
+    return image if full == size else image.resize((size, size), Image.LANCZOS)
 
 
 def masked(image, round_mask):
@@ -149,11 +203,11 @@ def masked(image, round_mask):
 
 def main():
     (RES / "drawable" / "ic_launcher_background.xml").write_text(
-        vector(BACKGROUND, "launcher icon background"), encoding="utf-8")
+        vector(background_layers(), "launcher icon background"), encoding="utf-8")
     (RES / "drawable" / "ic_launcher_foreground.xml").write_text(
-        vector(FOREGROUND, "launcher icon foreground: the Nowind cartridge"), encoding="utf-8")
+        vector(foreground_layers(), "launcher icon foreground: the pixel art Nowind cartridge"), encoding="utf-8")
     (RES / "drawable" / "ic_launcher_monochrome.xml").write_text(
-        vector(MONOCHROME, "launcher icon for themed icons (Android 13+)", even_odd=True), encoding="utf-8")
+        vector([("#FF000000", 1, monochrome())], "launcher icon for themed icons (Android 13+)"), encoding="utf-8")
 
     for density, size in {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}.items():
         image = render(size)
