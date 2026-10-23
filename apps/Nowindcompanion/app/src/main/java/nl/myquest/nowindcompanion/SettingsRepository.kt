@@ -23,7 +23,7 @@ data class Settings(
     val defaultSourceName: String = "",     // as entered in Settings, see expandSourceName; empty: no default source
     val defaultSourceKind: SourceKind = SourceKind.NowindApi,
     val sources: List<DiskSource> = emptyList(),    // added by the user, the default source is not in here
-    val firmwareSource: String = DEFAULT_FIRMWARE_URL,  // as entered, see expandFirmwareName
+    val firmwareSource: String = "",    // as entered, see expandFirmwareName; empty: not set
     val firmwareErase: EraseMethod = EraseMethod.Chip,
 ) {
     // all places to find disk images, the built-in default first
@@ -59,7 +59,7 @@ class SettingsRepository(private val context: Context) {
         defaultSourceName = this[Keys.DEFAULT_SOURCE_NAME] ?: "",
         defaultSourceKind = SourceKind.values().find { it.name == this[Keys.DEFAULT_SOURCE_KIND] } ?: SourceKind.NowindApi,
         sources = decodeSources(this[Keys.SOURCES]),
-        firmwareSource = this[Keys.FIRMWARE_SOURCE] ?: DEFAULT_FIRMWARE_URL,
+        firmwareSource = this[Keys.FIRMWARE_SOURCE] ?: "",
         firmwareErase = EraseMethod.values().find { it.name == this[Keys.FIRMWARE_ERASE] } ?: EraseMethod.Chip,
     )
 

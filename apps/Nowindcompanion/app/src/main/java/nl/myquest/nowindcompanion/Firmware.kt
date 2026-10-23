@@ -2,7 +2,6 @@ package nl.myquest.nowindcompanion
 
 import java.io.IOException
 
-const val DEFAULT_FIRMWARE_URL = "https://nullptr.nl/nowind/files/nowind.rom"
 const val MAX_FIRMWARE_SIZE = 4 * 1024 * 1024       // the flash rom of the v2 interface, v1 has 512 KB
 const val FIRMWARE_SIZE = 512 * 1024                // nowind.rom: 32 banks, all of the v1 flash rom
 

@@ -9,15 +9,17 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Restore
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -33,8 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,13 +46,17 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import nl.myquest.nowindcompanion.ConnectionState
 import nl.myquest.nowindcompanion.APP_FOLDER
-import nl.myquest.nowindcompanion.DEFAULT_FIRMWARE_URL
 import nl.myquest.nowindcompanion.EraseMethod
 import nl.myquest.nowindcompanion.FirmwareStatus
 import nl.myquest.nowindcompanion.FirmwareUpdater
+import nl.myquest.nowindcompanion.downloadFirmware
 import nl.myquest.nowindcompanion.expandFirmwareName
+import nl.myquest.nowindcompanion.findFirmwareVersions
 import nl.myquest.nowindcompanion.formatSize
 
 @Composable
@@ -69,24 +74,14 @@ fun FirmwareScreen(
     val localFile by firmware.localFile.collectAsState()
     val useLocalFile by firmware.useLocalFile.collectAsState()
     val fileInfo by firmware.fileInfo.collectAsState()
-    var source by rememberSaveable { mutableStateOf(firmwareSource) }
     var confirming by remember { mutableStateOf(false) }
+    var editingLink by remember { mutableStateOf(false) }
     val busy = status is FirmwareStatus.Busy
     val connected = connection == ConnectionState.Hosting
-    val canStart = connected && !busy && (useLocalFile || source.isNotBlank())
+    val canStart = connected && !busy && (useLocalFile || firmwareSource.isNotBlank())
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { firmware.pickLocalFile(it) }
-    }
-
-    // the url is saved when it is used or when leaving the screen, not on every key press
-    val latestSource by rememberUpdatedState(source)
-    DisposableEffect(Unit) {
-        onDispose { onFirmwareSource(latestSource) }
-    }
-    val start: (() -> Unit) -> Unit = { action ->
-        onFirmwareSource(source)
-        action()
     }
 
     // the screen going off must not pause the app halfway an update
@@ -117,37 +112,18 @@ fun FirmwareScreen(
 
             Section("Firmware") {
                 ChoiceRow(selected = !useLocalFile, enabled = !busy, onClick = { firmware.useLocalFile(false) }) {
-                    Text("Download", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                }
-                Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
-                    OutlinedTextField(
-                        value = source,
-                        onValueChange = {
-                            source = it
-                            firmware.useLocalFile(false)
-                        },
-                        label = { Text("URL") },
-                        singleLine = true,
-                        enabled = !busy,
-                        trailingIcon = {
-                            if (source.trim() != DEFAULT_FIRMWARE_URL) {
-                                IconButton(onClick = { source = DEFAULT_FIRMWARE_URL }, enabled = !busy) {
-                                    Icon(Icons.Rounded.Restore, contentDescription = "Use the default url")
-                                }
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    // a short name stands for a longer url, show which one
-                    val url = if (source.isBlank()) "" else expandFirmwareName(source)
-                    if (url.isNotEmpty() && url != source.trim()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Download", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text(
-                            url,
+                            if (firmwareSource.isBlank()) "No link set" else expandFirmwareName(firmwareSource),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
+                    }
+                    IconButton(onClick = { editingLink = true }, enabled = !busy) {
+                        Icon(Icons.Rounded.Edit, contentDescription = "Edit the firmware link")
                     }
                 }
                 ChoiceRow(
@@ -188,14 +164,18 @@ fun FirmwareScreen(
             StatusText(status, connected)
             fileInfo?.let { Section("In the firmware file") { InfoTable(it) } }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = { start(firmware::verify) }, enabled = canStart, modifier = Modifier.weight(1f)) {
-                    Text("Verify")
-                }
-                Button(onClick = { confirming = true }, enabled = canStart, modifier = Modifier.weight(1f)) {
-                    Text("Update")
-                }
-            }
+            Text(
+                "Check version reports the interface version, its flash rom, the firmware version and the USB details.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                if (storageReady) "Back up saves the firmware of the interface in Download/$APP_FOLDER/firmware as nowind-YYMMDD-HHmmss.rom. " +
+                        "To restore it, choose that file as 'File on this phone' and update."
+                else "Backups are saved in Download/$APP_FOLDER, choose that storage folder first.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Text(
                 "Verify only checks whether the interface already has this firmware, it changes nothing.",
                 style = MaterialTheme.typography.bodySmall,
@@ -209,19 +189,27 @@ fun FirmwareScreen(
                     Text("Back up")
                 }
             }
-            Text(
-                "Check version reports the interface version, its flash rom, the firmware version and the USB details.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                if (storageReady) "Saves the firmware of the interface in Download/$APP_FOLDER/firmware as nowind-YYMMDD-HHmmss.rom. " +
-                        "To restore it, choose that file as 'File on this phone' and update."
-                else "Backups are saved in Download/$APP_FOLDER, choose that storage folder first.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = firmware::verify, enabled = canStart, modifier = Modifier.weight(1f)) {
+                    Text("Verify")
+                }
+                Button(onClick = { confirming = true }, enabled = canStart, modifier = Modifier.weight(1f)) {
+                    Text("Update")
+                }
+            }
         }
+    }
+
+    if (editingLink) {
+        FirmwareLinkDialog(
+            initial = firmwareSource,
+            onDismiss = { editingLink = false },
+            onSave = {
+                onFirmwareSource(it)
+                firmware.useLocalFile(false)
+                editingLink = false
+            }
+        )
     }
 
     if (confirming) {
@@ -240,7 +228,7 @@ fun FirmwareScreen(
             confirmButton = {
                 TextButton(onClick = {
                     confirming = false
-                    start(firmware::update)
+                    firmware.update()
                 }) { Text("Update") }
             },
             dismissButton = {
@@ -248,6 +236,87 @@ fun FirmwareScreen(
             }
         )
     }
+}
+
+// asks for the firmware link and checks it before saving, like adding a disk image source:
+// the file is downloaded and must look like Nowind firmware
+@Composable
+private fun FirmwareLinkDialog(initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    var checking by remember { mutableStateOf(false) }
+    var found by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val url = if (text.isBlank()) "" else expandFirmwareName(text)
+
+    fun check() {
+        if (text.isBlank()) return
+        val checkedUrl = url
+        checking = true
+        error = null
+        scope.launch {
+            try {
+                val rom = withContext(Dispatchers.IO) { downloadFirmware(checkedUrl) }
+                val versions = findFirmwareVersions(rom)
+                found = listOfNotNull(versions.firmware, versions.flashWriter, formatSize(rom.size.toLong())).joinToString("  ·  ")
+            } catch (e: Exception) {
+                error = e.message ?: e.toString()
+            } finally {
+                checking = false
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Firmware link") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "The url of a Nowind firmware file. A name without dots stands for " +
+                            "https://<name>.nl/nowind/files/nowind.rom.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = {
+                        text = it
+                        found = null
+                        error = null
+                    },
+                    label = { Text("URL") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                // a short name stands for a longer url, show which one
+                if (url.isNotEmpty() && url != text.trim()) {
+                    Text(url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                when {
+                    checking -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Checking…")
+                    }
+
+                    found != null -> Text("Found firmware: $found", color = MaterialTheme.colorScheme.primary)
+                    error != null -> Text("Could not use it: $error", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            when {
+                found != null -> TextButton(onClick = { onSave(text) }) { Text("Save") }
+                // the site may be down right now; keep the link, verify and update check the file again anyway
+                error != null -> TextButton(onClick = { onSave(text) }) { Text("Save anyway") }
+                else -> TextButton(onClick = { check() }, enabled = text.isNotBlank() && !checking) { Text("Check") }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable

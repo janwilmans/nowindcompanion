@@ -170,26 +170,33 @@ class FirmwareUpdater(
 
     private suspend fun loadFirmware(): ByteArray {
         _localFile.value?.takeIf { _useLocalFile.value }?.let { return it.data }
-        val url = expandFirmwareName(settings.settings.first().firmwareSource)
+        val source = settings.settings.first().firmwareSource
+        if (source.isBlank()) throw IOException("no firmware link set")
+        val url = expandFirmwareName(source)
         _status.value = FirmwareStatus.Busy(FlashProgress("Downloading $url", null))
-        val connection = openHttpConnection(url)
-        try {
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) throw IOException("HTTP ${connection.responseCode} for $url")
-            return connection.inputStream.buffered().use { readLimited(it) }
-        } finally {
-            connection.disconnect()
-        }
+        return downloadFirmware(url)
     }
+}
 
-    // a wrong url could point at something huge, stop reading once it can not be firmware
-    private fun readLimited(input: InputStream): ByteArray {
-        val output = ByteArrayOutputStream()
-        val buffer = ByteArray(16 * 1024)
-        while (true) {
-            val count = input.read(buffer)
-            if (count < 0) return output.toByteArray()
-            output.write(buffer, 0, count)
-            if (output.size() > MAX_FIRMWARE_SIZE) throw IOException("the file is larger than the 4 MB flash rom")
-        }
+// blocking; the downloaded file must look like Nowind firmware, see checkFirmware
+fun downloadFirmware(url: String): ByteArray {
+    val connection = openHttpConnection(url)
+    try {
+        if (connection.responseCode != HttpURLConnection.HTTP_OK) throw IOException("HTTP ${connection.responseCode}")
+        return connection.inputStream.buffered().use { readLimited(it) }.also { checkFirmware(it) }
+    } finally {
+        connection.disconnect()
+    }
+}
+
+// a wrong url could point at something huge, stop reading once it can not be firmware
+private fun readLimited(input: InputStream): ByteArray {
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(16 * 1024)
+    while (true) {
+        val count = input.read(buffer)
+        if (count < 0) return output.toByteArray()
+        output.write(buffer, 0, count)
+        if (output.size() > MAX_FIRMWARE_SIZE) throw IOException("the file is larger than the 4 MB flash rom")
     }
 }
