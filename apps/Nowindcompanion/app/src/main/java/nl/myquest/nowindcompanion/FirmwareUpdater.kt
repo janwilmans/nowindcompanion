@@ -13,6 +13,9 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // a firmware file picked on the phone, kept for as long as the app runs
 class LocalFirmware(val name: String, val data: ByteArray)
@@ -31,6 +34,7 @@ class FirmwareUpdater(
     private val scope: CoroutineScope,
     private val client: FTDIClient,
     private val settings: SettingsRepository,
+    private val storage: StorageFolder,
 ) {
     private val _localFile = MutableStateFlow<LocalFirmware?>(null)
     val localFile: StateFlow<LocalFirmware?> = _localFile
@@ -68,29 +72,44 @@ class FirmwareUpdater(
         }
     }
 
-    fun verify() = run("Verify") { flasher ->
-        when (val offset = flasher.verify()) {
-            null -> "The interface already has this firmware."
-            else -> "The interface has different firmware (the first difference is at 0x%06X).".format(offset)
+    fun verify() = run("Verify") {
+        val rom = loadFirmware()
+        withFlashWriter { writer ->
+            when (val offset = writer.verify(rom)) {
+                null -> "The interface already has this firmware."
+                else -> "The interface has different firmware (the first difference is at 0x%06X).".format(offset)
+            }
         }
     }
 
-    fun update() = run("Update") { flasher ->
-        flasher.update()
-        "Firmware updated and verified. Switch the MSX off and on to start it."
+    fun update() = run("Update") {
+        val rom = loadFirmware()
+        val erase = settings.settings.first().firmwareErase
+        withFlashWriter { writer ->
+            writer.update(rom, erase)
+            "Firmware updated and verified. Switch the MSX off and on to start it."
+        }
     }
 
-    private fun run(action: String, work: (FirmwareFlasher) -> String) {
+    // saved as firmware/nowind-YYMMDD-HHmmss.rom in the storage folder, to restore later as a file on this phone
+    fun backup() = run("Backup") {
+        val root = storage.root.value ?: throw IOException("no access to the storage folder, choose it first")
+        val data = withFlashWriter { it.read() }
+        val name = "nowind-${SimpleDateFormat("yyMMdd-HHmmss", Locale.US).format(Date())}.rom"
+        val file = root.folder("firmware").replaceFile(name)
+        storage.write(file) { it.write(data) }
+        "Saved the firmware in Download/$APP_FOLDER/firmware/$name."
+    }
+
+    private suspend fun <T> withFlashWriter(work: (FlashWriter) -> T): T =
+        client.withFlashLink { link -> work(FlashWriter(link) { _status.value = FirmwareStatus.Busy(it) }) }
+
+    private fun run(action: String, work: suspend () -> String) {
         if (busy) return
-        _status.value = FirmwareStatus.Busy(FlashProgress("Loading the firmware", null))
+        _status.value = FirmwareStatus.Busy(FlashProgress("Starting", null))
         scope.launch(Dispatchers.IO) {
             try {
-                val rom = loadFirmware()
-                var message = ""
-                client.withFlashLink { link ->
-                    message = work(FirmwareFlasher(link, rom) { _status.value = FirmwareStatus.Busy(it) })
-                }
-                _status.value = FirmwareStatus.Done(message)
+                _status.value = FirmwareStatus.Done(work())
             } catch (e: Exception) {
                 Debug.error("firmware $action failed: $e")
                 _status.value = FirmwareStatus.Failed("$action failed: ${e.message}")

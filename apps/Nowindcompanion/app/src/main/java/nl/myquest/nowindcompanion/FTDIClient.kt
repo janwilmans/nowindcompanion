@@ -68,8 +68,8 @@ class FTDIClient(
     private val pendingDisk = AtomicReference<ByteArray?>(null)
 
     // a firmware update or verify, run by the hosting thread instead of hosting, see withFlashLink
-    private class FlashJob(val block: (FlashLink) -> Unit) {
-        val done = CompletableDeferred<Unit>()
+    private class FlashJob(val block: (FlashLink) -> Any?) {
+        val done = CompletableDeferred<Any?>()
     }
 
     private val pendingFlash = AtomicReference<FlashJob?>(null)
@@ -259,8 +259,7 @@ class FTDIClient(
         val readAndWriteBuffer = 3.toByte()
         ftdiDevice.purge(readAndWriteBuffer)
         try {
-            job.block(DeviceLink(ftdiDevice))
-            job.done.complete(Unit)
+            job.done.complete(job.block(DeviceLink(ftdiDevice)))
         } catch (e: Exception) {
             job.done.completeExceptionally(e)
         }
@@ -297,12 +296,13 @@ class FTDIClient(
         }
     }
 
-    // runs block on the hosting thread with direct access to the interface; blocks until it is done
-    suspend fun withFlashLink(block: (FlashLink) -> Unit) {
+    // runs block on the hosting thread with direct access to the interface; suspends until it is done
+    suspend fun <T> withFlashLink(block: (FlashLink) -> T): T {
         if (state.connection.value != ConnectionState.Hosting) throw IOException("the Nowind interface is not connected")
         val job = FlashJob(block)
         if (!pendingFlash.compareAndSet(null, job)) throw IOException("a firmware update is already running")
-        job.done.await()
+        @Suppress("UNCHECKED_CAST")
+        return job.done.await() as T
     }
 
     private fun host() = runBlocking {

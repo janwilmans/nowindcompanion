@@ -32,7 +32,7 @@ class NowindApp : Application() {
         settings = SettingsRepository(this)
         client = FTDIClient(this, state)
         library = DiskLibrary(storage, appScope, client, state, settings)
-        firmware = FirmwareUpdater(this, appScope, client, settings)
+        firmware = FirmwareUpdater(this, appScope, client, settings, storage)
 
         appScope.launch {
             // apply the stored settings before hosting starts, so 'debug information off' is honored from the start

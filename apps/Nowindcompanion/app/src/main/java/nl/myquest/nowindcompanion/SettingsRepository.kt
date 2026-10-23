@@ -24,6 +24,7 @@ data class Settings(
     val defaultSourceKind: SourceKind = SourceKind.NowindApi,
     val sources: List<DiskSource> = emptyList(),    // added by the user, the default source is not in here
     val firmwareSource: String = DEFAULT_FIRMWARE_URL,  // as entered, see expandFirmwareName
+    val firmwareErase: EraseMethod = EraseMethod.Chip,
 ) {
     // all places to find disk images, the built-in default first
     val allSources: List<DiskSource>
@@ -44,6 +45,7 @@ class SettingsRepository(private val context: Context) {
         val DEFAULT_SOURCE_KIND = stringPreferencesKey("default_source_kind")
         val SOURCES = stringPreferencesKey("sources")
         val FIRMWARE_SOURCE = stringPreferencesKey("firmware_source")
+        val FIRMWARE_ERASE = stringPreferencesKey("firmware_erase")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { it.toSettings() }
@@ -58,6 +60,7 @@ class SettingsRepository(private val context: Context) {
         defaultSourceKind = SourceKind.values().find { it.name == this[Keys.DEFAULT_SOURCE_KIND] } ?: SourceKind.NowindApi,
         sources = decodeSources(this[Keys.SOURCES]),
         firmwareSource = this[Keys.FIRMWARE_SOURCE] ?: DEFAULT_FIRMWARE_URL,
+        firmwareErase = EraseMethod.values().find { it.name == this[Keys.FIRMWARE_ERASE] } ?: EraseMethod.Chip,
     )
 
     suspend fun setEnableDos2(value: Boolean) {
@@ -97,6 +100,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setFirmwareSource(text: String) {
         context.dataStore.edit { it[Keys.FIRMWARE_SOURCE] = text.trim() }
+    }
+
+    suspend fun setFirmwareErase(method: EraseMethod) {
+        context.dataStore.edit { it[Keys.FIRMWARE_ERASE] = method.name }
     }
 
     private suspend fun editSources(change: (List<DiskSource>) -> List<DiskSource>) {

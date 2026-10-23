@@ -4,17 +4,21 @@ import java.io.IOException
 
 const val DEFAULT_FIRMWARE_URL = "https://nullptr.nl/nowind/files/nowind.rom"
 const val MAX_FIRMWARE_SIZE = 4 * 1024 * 1024       // the flash rom of the v2 interface, v1 has 512 KB
+const val FIRMWARE_SIZE = 512 * 1024                // nowind.rom: 32 banks, all of the v1 flash rom
 
 private const val BLOCK_SIZE = 128                  // the flash writer reads and writes blocks of 128 bytes
 private const val BANK_SIZE = 16 * 1024
+private const val SECTOR_SIZE = 64 * 1024           // the smallest part of the flash rom that can be erased
 
 // the commands of the flash writer on the MSX, see msxsrc/flashWriter.asm
 private const val CMD_VERIFY = 0xA2
 private const val CMD_WRITE = 0xA3
 private const val CMD_CHIP_ERASE = 0xA4
+private const val CMD_SECTOR_ERASE = 0xA5           // not in the flash writer of the v1 interface
 
 private const val ANSWER_TIMEOUT_MS = 3_000L
 private const val ERASE_TIMEOUT_MS = 10 * 60_000L    // a chip erase of the 4 MB flash rom can take minutes
+private const val SECTOR_ERASE_TIMEOUT_MS = 30_000L
 
 // a name without dots is short for that site's firmware: 'example' -> https://example.nl/nowind/files/nowind.rom
 fun expandFirmwareName(input: String): String {
@@ -46,42 +50,71 @@ data class FlashProgress(val phase: String, val fraction: Float?)
 
 class NoFlashWriterException : IOException("The MSX does not answer. Is it in Nowind Flash Writer Mode (red screen)?")
 
-// writes firmware to the flash rom of the interface the way 'nwhostapp --flash' does: chip erase, write, verify.
+// how the flash rom is erased before writing
+enum class EraseMethod {
+    Chip,       // the whole flash rom, like 'nwhostapp --flash'; works on every interface
+    Sector,     // only the 64 KB sectors that are written, like 'nwhostapp --glash'; faster, v2 small form factor only
+}
+
+// reads and writes the flash rom of the interface the way nwhostapp does, through the flash writer on the MSX.
 // blocking, every step waits for the MSX to answer
-class FirmwareFlasher(
+class FlashWriter(
     private val link: FlashLink,
-    rom: ByteArray,
     private val onProgress: (FlashProgress) -> Unit = {},
 ) {
-    private val rom = checkFirmware(rom)
-    private val blocks = this.rom.size / BLOCK_SIZE
+    // the first size bytes of the flash rom
+    fun read(size: Int = FIRMWARE_SIZE): ByteArray {
+        val blocks = size / BLOCK_SIZE
+        val data = ByteArray(blocks * BLOCK_SIZE)
+        for (block in 0 until blocks) {
+            readBlock(block).copyInto(data, block * BLOCK_SIZE)
+            progress("Reading", block + 1, blocks)
+        }
+        return data
+    }
 
     // the offset of the first byte in the flash rom that differs from the firmware, null when it holds the firmware
-    fun verify(): Int? {
+    fun verify(firmware: ByteArray): Int? {
+        val rom = checkFirmware(firmware)
+        val blocks = rom.size / BLOCK_SIZE
         for (block in 0 until blocks) {
             val offset = block * BLOCK_SIZE
             val data = readBlock(block)
             for (i in 0 until BLOCK_SIZE) {
                 if (data[i] != rom[offset + i]) return offset + i
             }
-            progress("Verifying", block + 1)
+            progress("Verifying", block + 1, blocks)
         }
         return null
     }
 
-    fun update() {
+    fun update(firmware: ByteArray, erase: EraseMethod = EraseMethod.Chip) {
+        val rom = checkFirmware(firmware)
         readBlock(0)    // fails quickly when the MSX is not in flash writer mode, before the long erase
-        onProgress(FlashProgress("Erasing, this can take a few minutes", null))
-        link.write(command(CMD_CHIP_ERASE))
-        waitForAck(ERASE_TIMEOUT_MS)
+        when (erase) {
+            EraseMethod.Chip -> {
+                onProgress(FlashProgress("Erasing, this can take a few minutes", null))
+                link.write(command(CMD_CHIP_ERASE))
+                waitForAck(ERASE_TIMEOUT_MS)
+            }
+            EraseMethod.Sector -> {
+                val sectors = (rom.size + SECTOR_SIZE - 1) / SECTOR_SIZE
+                for (sector in 0 until sectors) {
+                    onProgress(FlashProgress("Erasing sector ${sector + 1} of $sectors", sector.toFloat() / sectors))
+                    link.write(command(CMD_SECTOR_ERASE) + byteArrayOf(sector.toByte()))
+                    waitForAck(SECTOR_ERASE_TIMEOUT_MS)
+                }
+            }
+        }
+        val blocks = rom.size / BLOCK_SIZE
         for (block in 0 until blocks) {
             val offset = block * BLOCK_SIZE
             // the flash writer maps the bank in page 0 for writing
             link.write(command(CMD_WRITE, offset % BANK_SIZE, offset / BANK_SIZE) + rom.copyOfRange(offset, offset + BLOCK_SIZE))
             waitForAck(ANSWER_TIMEOUT_MS)
-            progress("Writing", block + 1)
+            progress("Writing", block + 1, blocks)
         }
-        verify()?.let { throw IOException("verify failed at 0x%06X, the firmware was not written correctly".format(it)) }
+        verify(rom)?.let { throw IOException("verify failed at 0x%06X, the firmware was not written correctly".format(it)) }
     }
 
     private fun readBlock(block: Int): ByteArray {
@@ -98,7 +131,7 @@ class FirmwareFlasher(
         return data
     }
 
-    private fun progress(phase: String, done: Int) {
+    private fun progress(phase: String, done: Int, blocks: Int) {
         if (done == blocks || done % 32 == 0) onProgress(FlashProgress(phase, done.toFloat() / blocks))
     }
 

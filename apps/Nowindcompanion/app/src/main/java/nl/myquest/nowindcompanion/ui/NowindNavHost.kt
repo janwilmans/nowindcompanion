@@ -43,6 +43,7 @@ fun NowindNavHost(app: NowindApp) {
     val commands by app.state.commands.collectAsState()
     val messages by app.state.messages.collectAsState()
     val settings by app.settings.settings.collectAsState(initial = Settings())
+    val storageRoot by app.storage.root.collectAsState()
     val back: () -> Unit = { nav.popBackStack() }
 
     StorageFolderPrompt(app)
@@ -102,6 +103,9 @@ fun NowindNavHost(app: NowindApp) {
                 connection = connection,
                 firmwareSource = settings.firmwareSource,
                 onFirmwareSource = { app.appScope.launch { app.settings.setFirmwareSource(it) } },
+                eraseMethod = settings.firmwareErase,
+                onEraseMethod = { app.appScope.launch { app.settings.setFirmwareErase(it) } },
+                storageReady = storageRoot != null,
                 onBack = back,
             )
         }

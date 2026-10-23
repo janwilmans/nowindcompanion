@@ -46,7 +46,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import nl.myquest.nowindcompanion.ConnectionState
+import nl.myquest.nowindcompanion.APP_FOLDER
 import nl.myquest.nowindcompanion.DEFAULT_FIRMWARE_URL
+import nl.myquest.nowindcompanion.EraseMethod
 import nl.myquest.nowindcompanion.FirmwareStatus
 import nl.myquest.nowindcompanion.FirmwareUpdater
 import nl.myquest.nowindcompanion.expandFirmwareName
@@ -58,6 +60,9 @@ fun FirmwareScreen(
     connection: ConnectionState,
     firmwareSource: String,
     onFirmwareSource: (String) -> Unit,
+    eraseMethod: EraseMethod,
+    onEraseMethod: (EraseMethod) -> Unit,
+    storageReady: Boolean,      // backups need the storage folder
     onBack: () -> Unit,
 ) {
     val status by firmware.status.collectAsState()
@@ -163,6 +168,22 @@ fun FirmwareScreen(
                 }
             }
 
+            Section("Erase method") {
+                ChoiceRow(selected = eraseMethod == EraseMethod.Chip, enabled = !busy, onClick = { onEraseMethod(EraseMethod.Chip) }) {
+                    ChoiceText("Whole flash rom", "Works on every interface. Takes a few minutes and also erases a ROM disk.")
+                }
+                ChoiceRow(selected = eraseMethod == EraseMethod.Sector, enabled = !busy, onClick = { onEraseMethod(EraseMethod.Sector) }) {
+                    ChoiceText("Only the sectors that are written", "Faster, like 'nwhostapp --glash'.")
+                }
+                Text(
+                    "Use 'only the sectors' on the V2 small form factor interface only, the V1 interface does not support it.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (eraseMethod == EraseMethod.Sector) FontWeight.SemiBold else null,
+                    color = if (eraseMethod == EraseMethod.Sector) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)
+                )
+            }
+
             StatusText(status, connected)
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -178,6 +199,20 @@ fun FirmwareScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            OutlinedButton(
+                onClick = firmware::backup,
+                enabled = connected && !busy && storageReady,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Back up the firmware")
+            }
+            Text(
+                if (storageReady) "Saves the firmware of the interface in Download/$APP_FOLDER/firmware as nowind-YYMMDD-HHmmss.rom. " +
+                        "To restore it, choose that file as 'File on this phone' and update."
+                else "Backups are saved in Download/$APP_FOLDER, choose that storage folder first.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 
@@ -187,8 +222,11 @@ fun FirmwareScreen(
             title = { Text("Update the firmware?") },
             text = {
                 Text(
-                    "The flash rom of the interface is erased and written again, this takes a few minutes. " +
-                            "Do not switch off the MSX or disconnect the phone until it is done."
+                    when (eraseMethod) {
+                        EraseMethod.Chip -> "The whole flash rom of the interface is erased and written again, this takes a few minutes. "
+                        EraseMethod.Sector -> "Only the sectors of the flash rom that are written are erased. " +
+                                "This only works on the V2 small form factor interface, not on V1. "
+                    } + "Do not switch off the MSX or disconnect the phone until it is done."
                 )
             },
             confirmButton = {
@@ -222,6 +260,14 @@ private fun ChoiceRow(
         RadioButton(selected = selected, onClick = null, enabled = enabled, modifier = Modifier.padding(12.dp))
         Spacer(Modifier.width(4.dp))
         content()
+    }
+}
+
+@Composable
+private fun RowScope.ChoiceText(title: String, description: String) {
+    Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

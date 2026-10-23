@@ -6,11 +6,12 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import java.io.IOException
 
-// answers like msxsrc/flashWriter.asm; expects one complete command per write, like FirmwareFlasher sends them
+// answers like msxsrc/flashWriter.asm; expects one complete command per write, like FlashWriter sends them
 private class FakeFlashWriter(size: Int = 512 * 1024) : FlashLink {
     val flash = ByteArray(size) { 0x5A }
     private val output = ArrayDeque<Byte>()
     var erases = 0
+    var sectorErases = 0
 
     override fun write(data: ByteArray) {
         val bytes = data.map { it.toInt() and 0xFF }
@@ -21,6 +22,11 @@ private class FakeFlashWriter(size: Int = 512 * 1024) : FlashLink {
             0xA4 -> {
                 flash.fill(0xFF.toByte())
                 erases++
+                ack(0)
+            }
+            0xA5 -> {
+                flash.fill(0xFF.toByte(), args[1] * 65536, (args[1] + 1) * 65536)
+                sectorErases++
                 ack(0)
             }
             0xA3 -> {
@@ -66,10 +72,21 @@ class FirmwareTest {
     fun update_writes_and_verifies_every_bank() {
         val msx = FakeFlashWriter()
         val firmware = rom(5 * 16 * 1024 + 300)
-        FirmwareFlasher(msx, firmware).update()
+        FlashWriter(msx).update(firmware)
         assertEquals(1, msx.erases)
         assertArrayEquals(firmware, msx.flash.copyOf(firmware.size))
-        assertNull(FirmwareFlasher(msx, firmware).verify())
+        assertNull(FlashWriter(msx).verify(firmware))
+    }
+
+    @Test
+    fun sector_erase_only_erases_what_is_written() {
+        val msx = FakeFlashWriter()
+        val firmware = rom(64 * 1024 + 1)
+        FlashWriter(msx).update(firmware, EraseMethod.Sector)
+        assertEquals(0, msx.erases)
+        assertEquals(2, msx.sectorErases)
+        assertArrayEquals(firmware, msx.flash.copyOf(firmware.size))
+        assertEquals(0x5A.toByte(), msx.flash[2 * 65536])     // the third sector is untouched
     }
 
     @Test
@@ -78,13 +95,25 @@ class FirmwareTest {
         val firmware = rom(64 * 1024)
         firmware.copyInto(msx.flash)
         msx.flash[40000] = (msx.flash[40000] + 1).toByte()
-        assertEquals(40000, FirmwareFlasher(msx, firmware).verify())
+        assertEquals(40000, FlashWriter(msx).verify(firmware))
         assertEquals(0, msx.erases)
+    }
+
+    @Test
+    fun a_backup_reads_the_whole_firmware_and_restores() {
+        val msx = FakeFlashWriter()
+        val firmware = rom(FIRMWARE_SIZE)
+        firmware.copyInto(msx.flash)
+        val backup = FlashWriter(msx).read()
+        assertArrayEquals(firmware, backup)
+        msx.flash.fill(0)
+        FlashWriter(msx).update(backup)
+        assertNull(FlashWriter(msx).verify(firmware))
     }
 
     @Test(expected = NoFlashWriterException::class)
     fun no_answer_means_no_flash_writer() {
-        FirmwareFlasher(Silent, rom(1024)).update()
+        FlashWriter(Silent).update(rom(1024))
     }
 
     @Test(expected = IOException::class)
