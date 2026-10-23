@@ -47,6 +47,10 @@ class FirmwareUpdater(
     private val _status = MutableStateFlow<FirmwareStatus>(FirmwareStatus.Idle)
     val status: StateFlow<FirmwareStatus> = _status
 
+    // what the firmware file of the last verify says about itself, for reference next to the result
+    private val _fileInfo = MutableStateFlow<List<Pair<String, String>>?>(null)
+    val fileInfo: StateFlow<List<Pair<String, String>>?> = _fileInfo
+
     private val busy: Boolean
         get() = _status.value is FirmwareStatus.Busy
 
@@ -54,6 +58,7 @@ class FirmwareUpdater(
         if (busy) return
         _useLocalFile.value = use && _localFile.value != null
         _status.value = FirmwareStatus.Idle
+        _fileInfo.value = null
     }
 
     fun pickLocalFile(uri: Uri) {
@@ -67,6 +72,7 @@ class FirmwareUpdater(
                 _localFile.value = LocalFirmware(name, data)
                 _useLocalFile.value = true
                 _status.value = FirmwareStatus.Idle
+                _fileInfo.value = null
             } catch (e: Exception) {
                 _status.value = FirmwareStatus.Failed("Could not use this file: ${e.message}")
             }
@@ -75,6 +81,13 @@ class FirmwareUpdater(
 
     fun verify() = run("Verify") {
         val rom = loadFirmware()
+        val versions = findFirmwareVersions(rom)
+        _fileInfo.value = listOf(
+            "File" to firmwareName(),
+            "Size" to formatSize(rom.size.toLong()),
+            "Firmware" to (versions.firmware ?: "no version found"),
+            "Flash writer" to (versions.flashWriter ?: "no version found"),
+        )
         withFlashWriter { writer ->
             when (val offset = writer.verify(rom)) {
                 null -> "The interface already has this firmware."
@@ -106,6 +119,7 @@ class FirmwareUpdater(
     fun checkVersion() {
         if (busy) return
         _status.value = FirmwareStatus.Busy(FlashProgress("Starting", null))
+        _fileInfo.value = null
         scope.launch(Dispatchers.IO) {
             try {
                 _status.value = FirmwareStatus.Report(client.withFlashLink { link -> versionReport(link) })
@@ -140,6 +154,7 @@ class FirmwareUpdater(
     private fun run(action: String, work: suspend () -> String) {
         if (busy) return
         _status.value = FirmwareStatus.Busy(FlashProgress("Starting", null))
+        _fileInfo.value = null
         scope.launch(Dispatchers.IO) {
             try {
                 _status.value = FirmwareStatus.Done(work())
@@ -149,6 +164,9 @@ class FirmwareUpdater(
             }
         }
     }
+
+    private suspend fun firmwareName(): String =
+        _localFile.value?.takeIf { _useLocalFile.value }?.name ?: expandFirmwareName(settings.settings.first().firmwareSource)
 
     private suspend fun loadFirmware(): ByteArray {
         _localFile.value?.takeIf { _useLocalFile.value }?.let { return it.data }

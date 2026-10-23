@@ -68,6 +68,7 @@ fun FirmwareScreen(
     val status by firmware.status.collectAsState()
     val localFile by firmware.localFile.collectAsState()
     val useLocalFile by firmware.useLocalFile.collectAsState()
+    val fileInfo by firmware.fileInfo.collectAsState()
     var source by rememberSaveable { mutableStateOf(firmwareSource) }
     var confirming by remember { mutableStateOf(false) }
     val busy = status is FirmwareStatus.Busy
@@ -185,6 +186,7 @@ fun FirmwareScreen(
             }
 
             StatusText(status, connected)
+            fileInfo?.let { Section("In the firmware file") { InfoTable(it) } }
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = { start(firmware::verify) }, enabled = canStart, modifier = Modifier.weight(1f)) {
@@ -278,6 +280,23 @@ private fun RowScope.ChoiceText(title: String, description: String) {
 }
 
 @Composable
+private fun InfoTable(items: List<Pair<String, String>>) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for ((label, value) in items) {
+            Row {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(0.4f)
+                )
+                Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.6f))
+            }
+        }
+    }
+}
+
+@Composable
 private fun StatusText(status: FirmwareStatus, connected: Boolean) {
     when (status) {
         is FirmwareStatus.Busy -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -292,21 +311,7 @@ private fun StatusText(status: FirmwareStatus, connected: Boolean) {
 
         is FirmwareStatus.Done -> Text(status.message, color = MaterialTheme.colorScheme.primary)
         is FirmwareStatus.Failed -> Text(status.message, color = MaterialTheme.colorScheme.error)
-        is FirmwareStatus.Report -> Section("Version") {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for ((label, value) in status.items) {
-                    Row {
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(0.4f)
-                        )
-                        Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.6f))
-                    }
-                }
-            }
-        }
+        is FirmwareStatus.Report -> Section("Version") { InfoTable(status.items) }
         FirmwareStatus.Idle -> if (!connected) {
             Text("Connect the Nowind interface to the phone first.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
