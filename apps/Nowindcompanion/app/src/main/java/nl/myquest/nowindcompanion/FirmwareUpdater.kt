@@ -24,6 +24,7 @@ sealed interface FirmwareStatus {
     data object Idle : FirmwareStatus
     data class Busy(val progress: FlashProgress) : FirmwareStatus
     data class Done(val message: String) : FirmwareStatus
+    data class Report(val items: List<Pair<String, String>>) : FirmwareStatus
     data class Failed(val message: String) : FirmwareStatus
 }
 
@@ -99,6 +100,38 @@ class FirmwareUpdater(
         val file = root.folder("firmware").replaceFile(name)
         storage.write(file) { it.write(data) }
         "Saved the firmware in Download/$APP_FOLDER/firmware/$name."
+    }
+
+    // everything the interface tells about itself; changes nothing
+    fun checkVersion() {
+        if (busy) return
+        _status.value = FirmwareStatus.Busy(FlashProgress("Starting", null))
+        scope.launch(Dispatchers.IO) {
+            try {
+                _status.value = FirmwareStatus.Report(client.withFlashLink { link -> versionReport(link) })
+            } catch (e: Exception) {
+                Debug.error("firmware version check failed: $e")
+                _status.value = FirmwareStatus.Failed("Check version failed: ${e.message}")
+            }
+        }
+    }
+
+    private fun versionReport(link: FlashLink): List<Pair<String, String>> {
+        val writer = FlashWriter(link) { _status.value = FirmwareStatus.Busy(it) }
+        val report = mutableListOf<Pair<String, String>>()
+        val chip = writer.identify()
+        if (chip == null) {
+            report += "Interface" to "unknown, the flash writer does not answer the id command (older firmware, probably V1)"
+        } else {
+            report += "Interface" to chip.interfaceVersion
+            report += "Flash rom" to "${chip.name}, ${chip.size}"
+            report += "Flash rom id" to chip.ids
+        }
+        val versions = writer.versions()
+        report += "Firmware" to (versions.firmware ?: "no version found")
+        report += "Flash writer" to (versions.flashWriter ?: "no version found")
+        report += link.usbInfo()
+        return report
     }
 
     private suspend fun <T> withFlashWriter(work: (FlashWriter) -> T): T =

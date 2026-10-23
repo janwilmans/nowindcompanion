@@ -294,6 +294,39 @@ class FTDIClient(
             }
             return data
         }
+
+        override fun usbInfo(): List<Pair<String, String>> {
+            val info = mutableListOf<Pair<String, String>>()
+            device.deviceInfo?.let { node ->
+                info += "USB chip" to ftdiType(node.type)
+                info += "USB id" to "VID 0x%04X, PID 0x%04X".format(node.id ushr 16, node.id and 0xFFFF)
+                info += "USB description" to node.description.orEmpty()
+                info += "USB serial" to node.serialNumber.orEmpty()
+                info += "USB chip revision" to "0x%04X".format(node.bcdDevice.toInt() and 0xFFFF)
+            }
+            // an interface without a programmed eeprom has nothing to report
+            try {
+                device.eepromRead()?.let { eeprom ->
+                    info += "EEPROM manufacturer" to eeprom.Manufacturer.orEmpty()
+                    info += "EEPROM product" to eeprom.Product.orEmpty()
+                    info += "EEPROM max power" to "${eeprom.MaxPower} mA" + if (eeprom.SelfPowered) ", self powered" else ", bus powered"
+                }
+            } catch (e: Exception) {
+                Debug.log("eepromRead failed: $e")
+            }
+            info += "d2xx library" to "0x%08X".format(D2xxManager.getLibraryVersion())
+            return info
+        }
+
+        private fun ftdiType(type: Int) = when (type) {
+            D2xxManager.FT_DEVICE_232B -> "FT232B"
+            D2xxManager.FT_DEVICE_8U232AM -> "FT8U232AM"
+            D2xxManager.FT_DEVICE_245R -> "FT245R / FT232R"
+            D2xxManager.FT_DEVICE_2232 -> "FT2232"
+            D2xxManager.FT_DEVICE_2232H -> "FT2232H"
+            D2xxManager.FT_DEVICE_232H -> "FT232H"
+            else -> "type $type"
+        }
     }
 
     // runs block on the hosting thread with direct access to the interface; suspends until it is done

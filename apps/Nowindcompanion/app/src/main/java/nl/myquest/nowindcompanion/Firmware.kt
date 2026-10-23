@@ -15,6 +15,7 @@ private const val CMD_VERIFY = 0xA2
 private const val CMD_WRITE = 0xA3
 private const val CMD_CHIP_ERASE = 0xA4
 private const val CMD_SECTOR_ERASE = 0xA5           // not in the flash writer of the v1 interface
+private const val CMD_AUTOSELECT = 0xA6             // the flash rom reports its manufacturer and device id
 
 private const val ANSWER_TIMEOUT_MS = 3_000L
 private const val ERASE_TIMEOUT_MS = 10 * 60_000L    // a chip erase of the 4 MB flash rom can take minutes
@@ -44,6 +45,33 @@ interface FlashLink {
 
     // exactly count bytes, IOException when they do not arrive within timeoutMs
     fun read(count: Int, timeoutMs: Long): ByteArray
+
+    // what the USB side of the interface tells about itself, as label and value
+    fun usbInfo(): List<Pair<String, String>> = emptyList()
+}
+
+// the flash rom as it identifies itself, see autoselectMode in flashWriter.asm
+data class FlashChip(val manufacturer: Int, val device: Int) {
+    private val known = when (manufacturer to device) {
+        0x01 to 0xA4 -> Triple("AMD AM29F040", "512 KB", "V1")
+        0x20 to 0xAC -> Triple("ST M29F032-D", "4 MB", "V2 (Sunrise)")
+        else -> null
+    }
+    val name: String get() = known?.first ?: "unknown"
+    val size: String get() = known?.second ?: "unknown"
+    val interfaceVersion: String get() = known?.third ?: "unknown"
+    val ids: String get() = "manufacturer 0x%02X, device 0x%02X".format(manufacturer, device)
+}
+
+data class FirmwareVersions(val firmware: String?, val flashWriter: String?)
+
+private val FIRMWARE_VERSION = Regex("""Nowind Interface v\d+(\.\d+)*( \[beta])?""")
+private val FLASH_WRITER_VERSION = Regex("""Nowind Flash Writer( Mode)? v\d+(\.\d+)*""")
+
+// the banners the firmware prints at boot and in flash writer mode
+fun findFirmwareVersions(rom: ByteArray): FirmwareVersions {
+    val text = String(rom, Charsets.ISO_8859_1)
+    return FirmwareVersions(FIRMWARE_VERSION.find(text)?.value, FLASH_WRITER_VERSION.find(text)?.value)
 }
 
 data class FlashProgress(val phase: String, val fraction: Float?)
@@ -63,14 +91,36 @@ class FlashWriter(
     private val onProgress: (FlashProgress) -> Unit = {},
 ) {
     // the first size bytes of the flash rom
-    fun read(size: Int = FIRMWARE_SIZE): ByteArray {
+    fun read(size: Int = FIRMWARE_SIZE): ByteArray = read(0, size, "Reading")
+
+    private fun read(offset: Int, size: Int, phase: String): ByteArray {
         val blocks = size / BLOCK_SIZE
         val data = ByteArray(blocks * BLOCK_SIZE)
         for (block in 0 until blocks) {
-            readBlock(block).copyInto(data, block * BLOCK_SIZE)
-            progress("Reading", block + 1, blocks)
+            readBlock(offset / BLOCK_SIZE + block).copyInto(data, block * BLOCK_SIZE)
+            progress(phase, block + 1, blocks)
         }
         return data
+    }
+
+    // null when the flash writer does not know the command (it ignores unknown commands), older firmware may not
+    fun identify(): FlashChip? {
+        readBlock(0)    // NoFlashWriterException when the MSX is not in flash writer mode
+        link.write(command(CMD_AUTOSELECT))
+        return try {
+            waitForAck(ANSWER_TIMEOUT_MS, readLast = false)
+            val ids = link.read(2, ANSWER_TIMEOUT_MS)
+            FlashChip(ids[0].toInt() and 0xFF, ids[1].toInt() and 0xFF)
+        } catch (e: IOException) {
+            null
+        }
+    }
+
+    // the versions are in bank 5 (the Nowind functions); other firmware may have them elsewhere, then all banks are searched
+    fun versions(): FirmwareVersions {
+        val bank5 = findFirmwareVersions(read(5 * BANK_SIZE, BANK_SIZE, "Reading the firmware version"))
+        if (bank5.firmware != null && bank5.flashWriter != null) return bank5
+        return findFirmwareVersions(read(0, FIRMWARE_SIZE, "Searching the firmware for its version"))
     }
 
     // the offset of the first byte in the flash rom that differs from the firmware, null when it holds the firmware
@@ -142,14 +192,14 @@ class FlashWriter(
         return header + byteArrayOf(address.toByte(), (address shr 8).toByte(), bank.toByte())
     }
 
-    // every command ends with 0xAA 0x55 and one more byte
-    private fun waitForAck(timeoutMs: Long) {
+    // every command ends with 0xAA 0x55 and one more byte (two for autoselect, read by the caller)
+    private fun waitForAck(timeoutMs: Long, readLast: Boolean = true) {
         var previous = 0
         while (true) {
             val value = link.read(1, timeoutMs)[0].toInt() and 0xFF
             if (previous == 0xAA && value == 0x55) break
             previous = value
         }
-        link.read(1, timeoutMs)
+        if (readLast) link.read(1, timeoutMs)
     }
 }

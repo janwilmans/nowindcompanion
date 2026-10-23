@@ -199,13 +199,19 @@ fun FirmwareScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            OutlinedButton(
-                onClick = firmware::backup,
-                enabled = connected && !busy && storageReady,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Back up the firmware")
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = firmware::checkVersion, enabled = connected && !busy, modifier = Modifier.weight(1f)) {
+                    Text("Check version")
+                }
+                OutlinedButton(onClick = firmware::backup, enabled = connected && !busy && storageReady, modifier = Modifier.weight(1f)) {
+                    Text("Back up")
+                }
             }
+            Text(
+                "Check version reports the interface version, its flash rom, the firmware version and the USB details.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Text(
                 if (storageReady) "Saves the firmware of the interface in Download/$APP_FOLDER/firmware as nowind-YYMMDD-HHmmss.rom. " +
                         "To restore it, choose that file as 'File on this phone' and update."
@@ -286,6 +292,21 @@ private fun StatusText(status: FirmwareStatus, connected: Boolean) {
 
         is FirmwareStatus.Done -> Text(status.message, color = MaterialTheme.colorScheme.primary)
         is FirmwareStatus.Failed -> Text(status.message, color = MaterialTheme.colorScheme.error)
+        is FirmwareStatus.Report -> Section("Version") {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((label, value) in status.items) {
+                    Row {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(0.4f)
+                        )
+                        Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.6f))
+                    }
+                }
+            }
+        }
         FirmwareStatus.Idle -> if (!connected) {
             Text("Connect the Nowind interface to the phone first.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
