@@ -1,5 +1,31 @@
 # Set the default behavior, in case people don't have core.autocrlf set.
+# Every file type in the repository is also listed below, so nothing depends on this fallback.
 * text eol=lf
+
+# source code
+*.kt text eol=lf
+*.kts text eol=lf
+*.java text eol=lf
+*.py text eol=lf
+*.php text eol=lf
+*.sh text eol=lf
+*.pro text eol=lf
+gradlew text eol=lf
+
+# configuration and data
+*.xml text eol=lf
+*.properties text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.url text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.editorconfig text eol=lf
+
+# documentation
+*.md text eol=lf
+*.txt text eol=lf
+LICENSE text eol=lf
 
 # Windows batch files need CRLF
 *.bat text eol=crlf
@@ -22,6 +48,7 @@
 *.apk binary
 *.aab binary
 *.so binary
+*.pyc binary
 *.jks binary
 *.keystore binary
 *.dsk binary
