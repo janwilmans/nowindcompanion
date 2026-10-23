@@ -1,1 +1,3 @@
 apps/nowindcompanion/.idea
+# disk images for local testing
+disks/
