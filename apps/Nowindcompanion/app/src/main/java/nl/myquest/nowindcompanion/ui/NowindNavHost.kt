@@ -79,6 +79,7 @@ fun NowindNavHost(app: NowindApp) {
                 onSourceEnabled = { source, enabled -> app.appScope.launch { app.settings.setSourceEnabled(source, enabled) } },
                 onRemoveSource = { app.appScope.launch { app.settings.removeSource(it.url) } },
                 onAddSource = { app.appScope.launch { app.settings.addSource(it) } },
+                onEditDefaultSource = { name, kind -> app.appScope.launch { app.settings.setDefaultSource(name, kind) } },
                 onBack = back,
             )
         }

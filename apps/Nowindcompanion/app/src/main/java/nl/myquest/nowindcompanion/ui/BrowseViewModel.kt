@@ -46,7 +46,7 @@ class BrowseViewModel : ViewModel() {
     private val _filter = MutableStateFlow("")
     val filter: StateFlow<String> = _filter
 
-    // listings can be large (the MSX2 DSK folder of file-hunter is ~800KB of html), so keep what was loaded
+    // listings can be large (a big archive folder can be ~800KB of html), so keep what was loaded
     private val cache = mutableMapOf<String, List<RemoteEntry>>()
     private var loadJob: Job? = null
 

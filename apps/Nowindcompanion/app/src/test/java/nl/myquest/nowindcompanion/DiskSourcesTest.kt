@@ -9,7 +9,7 @@ class DiskSourcesTest {
     @Test
     fun detects_the_nowind_api() {
         val body = "0 Ogro (1985)(unknown)\t368640\n1 Level Only Game (1993)(Mint Soft)(ja)\t737280\n"
-        assertEquals(SourceKind.NowindApi, classifySource(body, NOWIND_API_URL).kind)
+        assertEquals(SourceKind.NowindApi, classifySource(body, defaultSource("example").url).kind)
     }
 
     @Test
@@ -46,8 +46,23 @@ class DiskSourcesTest {
     }
 
     @Test
+    fun a_name_without_dots_is_a_nowind_api() {
+        assertEquals("https://api.example-site.com/nowind.php", expandSourceName(" example-site "))
+        assertEquals("https://api.example.com/nowind.php", defaultSource("example").url)
+        assertEquals("https://example.com/", expandSourceName("example.com/"))
+        assertEquals("https://my-site.com/disks", expandSourceName("my-site.com/disks"))
+        assertEquals("http://localhost/disks", expandSourceName("http://localhost/disks"))
+    }
+
+    @Test
+    fun the_default_source_is_off_until_a_name_is_entered() {
+        assertEquals(false, defaultSource("  ").enabled)
+        assertEquals(true, defaultSource("example").enabled)
+    }
+
+    @Test
     fun labels() {
-        assertEquals("default", DEFAULT_SOURCE.label)
+        assertEquals("default", defaultSource("example").label)
         assertEquals("download.file-hunter.com/Games/MSX2+/DSK", DiskSource("https://download.file-hunter.com/Games/MSX2+/DSK/", SourceKind.DirectoryListing).label)
         assertEquals("msxarchive.nl/pub/msx/mep-mirror/Games", DiskSource("https://www.msxarchive.nl/pub/msx/mep-mirror/Games/", SourceKind.DirectoryListing).label)
     }

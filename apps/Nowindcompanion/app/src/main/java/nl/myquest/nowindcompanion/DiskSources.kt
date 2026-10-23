@@ -5,10 +5,8 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
 
-const val NOWIND_API_URL = "https://api.file-hunter.com/nowind.php"
-
 enum class SourceKind(val label: String) {
-    NowindApi("Nowind API"),            // plain text 'name<TAB>size' lines, see filehunter/nowind.php
+    NowindApi("Nowind API"),            // plain text 'name<TAB>size' lines
     DirectoryListing("Directory listing"),
     WebPage("Web page"),                // a page with links to .zip / .dsk files
 }
@@ -24,9 +22,11 @@ data class DiskSource(
         get() = if (builtIn) "default" else shortUrl(url)
 }
 
-val DEFAULT_SOURCE = DiskSource(NOWIND_API_URL, SourceKind.NowindApi, enabled = true, builtIn = true)
+// the built-in source, 'name' is what the user entered for it in Settings; it is off until a name is entered
+fun defaultSource(name: String, kind: SourceKind = SourceKind.NowindApi, enabled: Boolean = true) =
+    DiskSource(if (name.isBlank()) "" else expandSourceName(name), kind, enabled && name.isNotBlank(), builtIn = true)
 
-// "https://download.file-hunter.com/Games/MSX2/DSK/" -> "download.file-hunter.com/Games/MSX2/DSK"
+// "https://download.example.com/Games/MSX2/DSK/" -> "download.example.com/Games/MSX2/DSK"
 fun shortUrl(url: String): String =
     decodeUrlPart(url.substringAfter("://").removePrefix("www.").trimEnd('/'))
 
@@ -53,6 +53,12 @@ fun decodeSources(text: String?): List<DiskSource> =
 fun normalizeSourceUrl(input: String): String {
     val url = input.trim()
     return if (url.contains("://")) url else "https://$url"
+}
+
+// a name without dots is short for that site's Nowind API: 'example' -> https://api.example.com/nowind.php
+fun expandSourceName(input: String): String {
+    val name = input.trim()
+    return if ('.' !in name && "://" !in name) "https://api.$name.com/nowind.php" else normalizeSourceUrl(name)
 }
 
 private val NOWIND_LINE = Regex("""^[^\t<>]+\t\d+$""")

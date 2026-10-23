@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import nl.myquest.nowindcompanion.DiskSource
+import nl.myquest.nowindcompanion.SourceKind
 import nl.myquest.nowindcompanion.Settings
 
 @Composable
@@ -43,6 +44,7 @@ fun SettingsScreen(
     onSourceEnabled: (DiskSource, Boolean) -> Unit,
     onRemoveSource: (DiskSource) -> Unit,
     onAddSource: (DiskSource) -> Unit,
+    onEditDefaultSource: (String, SourceKind) -> Unit,
     onBack: () -> Unit,
 ) {
     // the hosting notification needs permission on Android 13+, without it the service still runs, just invisibly
@@ -79,7 +81,10 @@ fun SettingsScreen(
                 )
             }
             Section("Disk image sources") {
-                SourceRows(settings.allSources, onSourceEnabled, onRemoveSource, onAddSource)
+                SourceRows(
+                    settings.allSources, settings.defaultSourceName,
+                    onSourceEnabled, onRemoveSource, onAddSource, onEditDefaultSource
+                )
             }
             Section("MSX") {
                 SwitchRow(

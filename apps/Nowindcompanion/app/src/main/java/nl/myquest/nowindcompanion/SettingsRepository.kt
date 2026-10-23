@@ -15,11 +15,13 @@ data class Settings(
     val keepActive: Boolean = false,    // foreground service + wake lock, so hosting continues in the background
     val hostedDisk: String? = null,     // file name in the disk library, restored at startup
     val defaultSourceEnabled: Boolean = true,
+    val defaultSourceName: String = "",     // as entered in Settings, see expandSourceName; empty: no default source
+    val defaultSourceKind: SourceKind = SourceKind.NowindApi,
     val sources: List<DiskSource> = emptyList(),    // added by the user, the default source is not in here
 ) {
     // all places to find disk images, the built-in default first
     val allSources: List<DiskSource>
-        get() = listOf(DEFAULT_SOURCE.copy(enabled = defaultSourceEnabled)) + sources
+        get() = listOf(defaultSource(defaultSourceName, defaultSourceKind, defaultSourceEnabled)) + sources
 }
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
@@ -32,6 +34,8 @@ class SettingsRepository(private val context: Context) {
         val KEEP_ACTIVE = booleanPreferencesKey("keep_active")
         val HOSTED_DISK = stringPreferencesKey("hosted_disk")
         val DEFAULT_SOURCE_ENABLED = booleanPreferencesKey("default_source_enabled")
+        val DEFAULT_SOURCE_NAME = stringPreferencesKey("default_source_name")
+        val DEFAULT_SOURCE_KIND = stringPreferencesKey("default_source_kind")
         val SOURCES = stringPreferencesKey("sources")
     }
 
@@ -43,6 +47,8 @@ class SettingsRepository(private val context: Context) {
         keepActive = this[Keys.KEEP_ACTIVE] ?: false,
         hostedDisk = this[Keys.HOSTED_DISK],
         defaultSourceEnabled = this[Keys.DEFAULT_SOURCE_ENABLED] ?: true,
+        defaultSourceName = this[Keys.DEFAULT_SOURCE_NAME] ?: "",
+        defaultSourceKind = SourceKind.values().find { it.name == this[Keys.DEFAULT_SOURCE_KIND] } ?: SourceKind.NowindApi,
         sources = decodeSources(this[Keys.SOURCES]),
     )
 
@@ -71,6 +77,13 @@ class SettingsRepository(private val context: Context) {
             context.dataStore.edit { it[Keys.DEFAULT_SOURCE_ENABLED] = enabled }
         } else {
             editSources { sources -> sources.map { if (it.url == source.url) it.copy(enabled = enabled) else it } }
+        }
+    }
+
+    suspend fun setDefaultSource(name: String, kind: SourceKind) {
+        context.dataStore.edit {
+            it[Keys.DEFAULT_SOURCE_NAME] = name.trim()
+            it[Keys.DEFAULT_SOURCE_KIND] = kind.name
         }
     }
 

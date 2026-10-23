@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Api
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material3.AlertDialog
@@ -22,7 +23,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,14 +47,9 @@ import nl.myquest.nowindcompanion.Detection
 import nl.myquest.nowindcompanion.DiskSource
 import nl.myquest.nowindcompanion.SourceKind
 import nl.myquest.nowindcompanion.detectSource
+import nl.myquest.nowindcompanion.expandSourceName
 import nl.myquest.nowindcompanion.normalizeSourceUrl
 import nl.myquest.nowindcompanion.shortUrl
-
-private val exampleSources = listOf(
-    "https://download.file-hunter.com/Games/MSX2/DSK/",
-    "https://www.msxarchive.nl/pub/msx/mep-mirror/Games/",
-    "http://floppy.disk.free.fr/Sources/games_msx.htm",
-)
 
 private fun SourceKind.icon() = when (this) {
     SourceKind.NowindApi -> Icons.Rounded.Api
@@ -66,11 +61,14 @@ private fun SourceKind.icon() = when (this) {
 @Composable
 fun ColumnScope.SourceRows(
     sources: List<DiskSource>,
+    defaultName: String,    // the default source as entered, shown instead of its url
     onEnabled: (DiskSource, Boolean) -> Unit,
     onRemove: (DiskSource) -> Unit,
     onAdd: (DiskSource) -> Unit,
+    onEditDefault: (String, SourceKind) -> Unit,
 ) {
     var adding by remember { mutableStateOf(false) }
+    var editingDefault by remember { mutableStateOf(false) }
     for (source in sources) {
         Row(
             Modifier
@@ -89,7 +87,7 @@ fun ColumnScope.SourceRows(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    if (source.builtIn) source.kind.label
+                    if (source.builtIn) defaultName.ifBlank { "not set" }.let(::shortUrl) + "  ·  " + source.kind.label
                     else shortUrl(source.url).substringAfter('/', "").ifEmpty { "/" } + "  ·  " + source.kind.label,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -97,12 +95,20 @@ fun ColumnScope.SourceRows(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            if (!source.builtIn) {
+            if (source.builtIn) {
+                IconButton(onClick = { editingDefault = true }) {
+                    Icon(Icons.Rounded.Edit, contentDescription = "Edit the default source")
+                }
+            } else {
                 IconButton(onClick = { onRemove(source) }) {
                     Icon(Icons.Rounded.Delete, contentDescription = "Remove ${source.label}")
                 }
             }
-            Switch(checked = source.enabled, onCheckedChange = { onEnabled(source, it) })
+            Switch(
+                checked = source.enabled,
+                onCheckedChange = { onEnabled(source, it) },
+                enabled = !source.builtIn || defaultName.isNotBlank()
+            )
         }
     }
     TextButton(onClick = { adding = true }, modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) {
@@ -111,21 +117,44 @@ fun ColumnScope.SourceRows(
         Text("Add source")
     }
     if (adding) {
-        AddSourceDialog(
-            existing = sources.map { it.url },
+        SourceDialog(
+            title = "Add disk image source",
+            confirm = "Add",
             onDismiss = { adding = false },
-            onAdd = {
-                onAdd(it)
+            onConfirm = { _, url, kind ->
+                onAdd(DiskSource(url, kind))
                 adding = false
+            }
+        )
+    }
+    if (editingDefault) {
+        SourceDialog(
+            title = "Default source",
+            confirm = "Save",
+            initial = defaultName,
+            toUrl = ::expandSourceName,
+            onDismiss = { editingDefault = false },
+            // keep the name as entered, the url it stands for is not shown
+            onConfirm = { text, _, kind ->
+                onEditDefault(text, kind)
+                editingDefault = false
             }
         )
     }
 }
 
-// asks for a url and checks it before adding, so the user sees whether disk images can be found there
+// asks for a url and checks it before saving, so the user sees whether disk images can be found there.
+// onConfirm gets the text as entered, the url it was found at and the kind of source.
 @Composable
-private fun AddSourceDialog(existing: List<String>, onDismiss: () -> Unit, onAdd: (DiskSource) -> Unit) {
-    var text by remember { mutableStateOf("") }
+private fun SourceDialog(
+    title: String,
+    confirm: String,
+    initial: String = "",
+    toUrl: (String) -> String = ::normalizeSourceUrl,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, SourceKind) -> Unit,
+) {
+    var text by remember { mutableStateOf(initial) }
     var checking by remember { mutableStateOf(false) }
     var detection by remember { mutableStateOf<Detection?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -135,7 +164,7 @@ private fun AddSourceDialog(existing: List<String>, onDismiss: () -> Unit, onAdd
 
     fun check() {
         if (text.isBlank()) return
-        val url = normalizeSourceUrl(text)
+        val url = toUrl(text)
         checkedUrl = url
         checking = true
         error = null
@@ -152,7 +181,7 @@ private fun AddSourceDialog(existing: List<String>, onDismiss: () -> Unit, onAdd
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add disk image source") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
@@ -172,15 +201,6 @@ private fun AddSourceDialog(existing: List<String>, onDismiss: () -> Unit, onAdd
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (text.isBlank()) {
-                    Text("Examples", style = MaterialTheme.typography.labelMedium)
-                    for (example in exampleSources.filter { it !in existing }) {
-                        SuggestionChip(
-                            onClick = { text = example },
-                            label = { Text(shortUrl(example), maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                        )
-                    }
-                }
                 when {
                     checking -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -204,9 +224,9 @@ private fun AddSourceDialog(existing: List<String>, onDismiss: () -> Unit, onAdd
         confirmButton = {
             val found = detection
             when {
-                found != null -> TextButton(onClick = { onAdd(DiskSource(found.url, found.kind)) }) { Text("Add") }
+                found != null -> TextButton(onClick = { onConfirm(text, found.url, found.kind) }) { Text(confirm) }
                 // some sites refuse automated requests now and then; keep the url, Browse reads it as a web page
-                error != null -> TextButton(onClick = { onAdd(DiskSource(checkedUrl, SourceKind.WebPage)) }) { Text("Add anyway") }
+                error != null -> TextButton(onClick = { onConfirm(text, checkedUrl, SourceKind.WebPage) }) { Text("$confirm anyway") }
                 else -> TextButton(onClick = { check() }, enabled = text.isNotBlank() && !checking) { Text("Check") }
             }
         },

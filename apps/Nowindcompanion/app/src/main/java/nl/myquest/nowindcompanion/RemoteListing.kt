@@ -4,7 +4,7 @@ import org.jsoup.Jsoup
 import java.net.HttpURLConnection
 import java.net.URL
 
-// some sites (download.file-hunter.com) answer '405 Method Not Allowed' to clients without a browser-like user agent
+// some sites answer '405 Method Not Allowed' to clients without a browser-like user agent
 private const val USER_AGENT = "Mozilla/5.0 (Linux; Android) NowindCompanion"
 
 data class RemoteEntry(
