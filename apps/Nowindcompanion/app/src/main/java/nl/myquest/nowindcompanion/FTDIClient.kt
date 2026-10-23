@@ -51,7 +51,7 @@ fun dosVersionFor(msxIdByte: Int, enableDos2: Boolean): Int =
 class FTDIClient(
     private val context: Context,
     private val state: HostState,
-    private var ftD2xx: D2xxManager = D2xxManager.getInstance(context)
+    private var ftD2xx: D2xxManager = D2xxCompat.getInstance(context)
 ) {
 
     private val commandQueue = CommandQueue()    // Host << MSX

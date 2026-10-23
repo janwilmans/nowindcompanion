@@ -41,7 +41,7 @@ class ReadOperation(private val startAddress: Int, private val data: List<Int>) 
         val next = commandQueue.next()
         val result = (next == block.marker)
         if (!result) {
-            Debug.log("verify for head marker ${block.marker} failed, tail marker received: ${next}")
+            Debug.log("verify for head marker ${block.marker} failed, tail marker received: $next")
         }
         return result
     }
@@ -63,17 +63,17 @@ class ReadOperation(private val startAddress: Int, private val data: List<Int>) 
     suspend fun execute(responseQueue: ResponseQueue, commandQueue: CommandQueue) {
         val total = data.size
         var processed = 0
-        var transferingToPage01 = startAddress < TWOBANKLIMIT
+        var transferringToPage01 = startAddress < TWOBANKLIMIT
         var blocksSent = 0
         var retransmissions = 0
 
         while (processed < total) {
             val address = startAddress + processed
-            if (transferingToPage01 && address >= TWOBANKLIMIT) {
+            if (transferringToPage01 && address >= TWOBANKLIMIT) {
                 // switch to page 2/3 transfers
                 responseQueue.addHeader()
                 responseQueue.add(BlockRead.EXIT_MORE_DATA_AHEAD.value)
-                transferingToPage01 = false
+                transferringToPage01 = false
             }
 
             val remaining = total - processed
@@ -105,7 +105,7 @@ class ReadOperation(private val startAddress: Int, private val data: List<Int>) 
             // the MSX acknowledges in order; a failed block is resent immediately to its own address
             // and moved to the back of the queue
             while (queue.isNotEmpty()) {
-                val block = queue.first
+                val block = queue.first()
                 if (verify(block, commandQueue)) {
                     queue.removeFirst()
                 } else {
@@ -117,7 +117,7 @@ class ReadOperation(private val startAddress: Int, private val data: List<Int>) 
             }
         }
         if (retransmissions > 0) {
-            Debug.log("ReadOperation done, ${blocksSent} blocks with ${retransmissions} retransmission(s).")
+            Debug.log("ReadOperation done, $blocksSent blocks with $retransmissions retransmission(s).")
         }
         responseQueue.addHeader()
         responseQueue.add(BlockRead.EXIT.value)

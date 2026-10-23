@@ -64,7 +64,7 @@ class HostingService : Service() {
         scope.launch {
             combine(state.connection, state.hostedDisk) { connection, disk -> connection to disk }
                 .collect { (connection, disk) ->
-                    getSystemService(NotificationManager::class.java)
+                    (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
                         .notify(NOTIFICATION_ID, buildNotification(connection, disk))
                 }
         }

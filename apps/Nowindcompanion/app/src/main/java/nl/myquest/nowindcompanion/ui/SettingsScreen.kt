@@ -72,7 +72,7 @@ fun SettingsScreen(
                 SwitchRow(
                     icon = Icons.Rounded.PowerSettingsNew,
                     title = "Keep hosting in the background",
-                    description = "Keeps the app active with a notification, so the MSX can use its disk while " +
+                    description = "While the interface is connected, keeps the app active with a notification, so the MSX can use its disk while " +
                             "the screen is off or another app is open. Uses more battery.",
                     checked = settings.keepActive,
                     onCheckedChange = enableKeepActive

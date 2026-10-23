@@ -5,6 +5,8 @@ import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
@@ -38,18 +40,24 @@ class NowindApp : Application() {
             client.start()
             settings.settings.collect { applySettings(it) }
         }
-    }
 
-    private var keepActive = false
+        // a connectedDevice foreground service may only run while the interface is connected (Play policy,
+        // and Android 14+ refuses to start it without access to the USB device)
+        appScope.launch {
+            combine(settings.settings, state.connection) { value, connection ->
+                value.keepActive && connection == ConnectionState.Hosting
+            }
+                .distinctUntilChanged()
+                .collect { active ->
+                    if (active) HostingService.start(this@NowindApp) else HostingService.stop(this@NowindApp)
+                }
+        }
+    }
 
     // FTDIClient reads these from its own thread, so mirror the persisted values into volatile fields
     private fun applySettings(value: Settings) {
         Debug.enabled = value.debugEnabled
         client.enableDos2 = value.enableDos2
-        if (value.keepActive != keepActive) {
-            keepActive = value.keepActive
-            if (keepActive) HostingService.start(this) else HostingService.stop(this)
-        }
     }
 }
 
