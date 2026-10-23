@@ -1,7 +1,7 @@
 # Publishing Nowind Companion on Google Play
 
 Plan to sell the Android app on Google Play for **€10**, with **free access for beta testers**.
-Status as of 22 October 2026. App ID: `nl.myquest.nowindcompanion`.
+Status as of 23 October 2026. App ID: `nl.nullptr.nowindcompanion` (the Kotlin namespace stays `nl.myquest.nowindcompanion`).
 
 ## Decisions
 
@@ -14,23 +14,24 @@ Status as of 22 October 2026. App ID: `nl.myquest.nowindcompanion`.
 ## Play Store rules that shape this plan
 
 - **A free app can never become paid.** Play only allows paid → free. The first public release must therefore already be paid.
-- **The app ID is permanent** once an app is published. Decide now whether it stays `nl.myquest.nowindcompanion` (see [Open questions](#open-questions)).
+- **The app ID is permanent** once an app is published. It is `nl.nullptr.nowindcompanion`.
 - **Paid apps and testers:**
   - **Internal testing** (up to 100 testers): testers install the paid app **for free**.
   - **Closed and open testing**: testers **must buy** a paid app, unless they redeem a promo code.
 - **Promo codes** give the paid app away for free. Up to 500 codes per quarter, redeemable in the Play Store app.
 - **New personal accounts.** Personal developer accounts created after 13 November 2023 must run a **closed test with at least 12 testers, opted in for 14 continuous days**, before production can be requested. Check the Play Console dashboard to see whether this applies to our account.
-- **Target API level.** Since 31 August 2026 new apps and updates must target **API 36** (Android 16). Extensions to 1 November 2026 could be requested. The app targets API 33 today, so **uploads will be rejected** until this is fixed.
+- **Target API level.** Since 31 August 2026 new apps and updates must target **API 36** (Android 16). Extensions to 1 November 2026 could be requested. The app now targets API 36.
 - **Money.** Prices include VAT in the EU, and Google remits the VAT. Google's service fee is 15% on the first $1M per year. €10 in the Netherlands (21% VAT) leaves about **€7.00 per sale**.
 
 ## Part 1 – Changes to the app
 
 All in `apps/Nowindcompanion/app`. Each step is its own commit.
 
-1. **Target and compile SDK 36** (`build.gradle.kts`, now `compileSdk 34` / `targetSdk 33`).
-   - Raise core-ktx, activity-compose, lifecycle, navigation and the Compose BOM (now `2024.02.00`) to versions that support SDK 36.
+1. **Target and compile SDK 36.** Done in `build.gradle.kts`.
+   - `d2xx.jar` crashes when targeting 34+ (mutable implicit `PendingIntent`, `registerReceiver` without an export flag). `D2xxCompat` does that setup itself; FTDIClient must get its `D2xxManager` from `D2xxCompat.getInstance`. Test the USB permission dialog on a real phone.
+   - The current libraries build fine with SDK 36. Newer AndroidX releases require minSdk 23, so raise them together with minSdk, not now.
    - Check the behaviour changes for targeting 34–36:
-     - **Foreground service `connectedDevice`.** From target 34 it needs a prerequisite permission or a granted USB device. Add `android.permission.CHANGE_NETWORK_STATE` (a normal permission) to the manifest and check that `HostingService` still starts.
+     - **Foreground service `connectedDevice`.** From target 34 it needs a prerequisite permission or a granted USB device. `NowindApp` only runs `HostingService` while "keep hosting" is on **and** the interface is connected (`ConnectionState.Hosting`), so USB access has been granted by then. Don't add `CHANGE_NETWORK_STATE` as a workaround: the app doesn't need it, and the Play foreground service policy only allows `connectedDevice` while a device is in use. Check that `HostingService` still starts after the interface connects.
      - **Edge-to-edge** is enforced from target 35. This is already done (`enableEdgeToEdge()` in `MainActivity`). Check that no content hides behind the system bars.
      - **Predictive back** applies from target 35/36. `BackHandler` in `BrowseScreen` should keep working; test the back gesture on every screen.
 2. **Release signing.**
@@ -101,7 +102,9 @@ Done by the account owner, in this order.
 
 - **Copyrighted content policy.** Play removes apps that facilitate downloading copyrighted material without permission.
   - **The risk:** the default source is the File-Hunter Nowind API (`api.file-hunter.com/nowind.php`), which serves MSX game disks.
-  - Ask Arnaud de Klerk (file-hunter.com) for **written permission** to use the API from a paid app, and mention it in the review notes.
+  - **Decision:** the app ships with **no** built-in source name. The default source is empty and off until the user enters a name in Settings. A name without dots stands for `https://api.<name>.com/nowind.php`, and the app never shows the expanded URL. The name `file-hunter` is not stored anywhere in the app.
+  - The "Add source" dialog used to suggest three game archives as examples. That counts as steering users to game downloads, so the examples have been removed. Don't add game archives back as suggestions.
+  - Ask Arnaud de Klerk (file-hunter.com) for **written permission** to use the API from a paid app, and mention it in the review notes. Don't submit without it.
   - **Store listing wording:** describe the app as the host for the Nowind interface and the archive browser as an optional extra.
   - **The listing screenshots** should not prominently show commercial game titles.
   - Without that permission, the safer route is to ship with no built-in source and let users add their own.
@@ -111,7 +114,6 @@ Done by the account owner, in this order.
 
 ## Open questions
 
-- **App ID.** Keep `nl.myquest.nowindcompanion`, or publish as `nl.nullptr.nowindcompanion`? It cannot be changed after the first upload.
 - **Account type and age.** Does the account fall under the 12-tester closed-test rule? See the Play Console dashboard.
 - **Permission from file-hunter.com** for the built-in default source.
 - **Privacy policy hosting:** nullptr.nl?
