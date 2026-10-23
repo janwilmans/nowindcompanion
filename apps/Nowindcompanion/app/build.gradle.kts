@@ -9,7 +9,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "nl.myquest.nowindcompanion"
+        applicationId = "nl.nullptr.nowindcompanion"
         minSdk = 21
         targetSdk = 33
         versionCode = 1
