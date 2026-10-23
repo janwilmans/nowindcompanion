@@ -72,7 +72,7 @@ import nl.myquest.nowindcompanion.formatSize
 import nl.myquest.nowindcompanion.DownloadProgress
 import nl.myquest.nowindcompanion.DownloadRequest
 import nl.myquest.nowindcompanion.RemoteEntry
-import java.io.File
+import nl.myquest.nowindcompanion.LibraryFile
 
 @Composable
 fun BrowseScreen(library: DiskLibrary, sources: List<DiskSource>, hostedDisk: String?, onBack: () -> Unit) {
@@ -127,7 +127,7 @@ private fun ArchiveTab(
     library: DiskLibrary,
     pending: List<DownloadRequest>,
     progress: DownloadProgress?,
-    files: List<File>,
+    files: List<LibraryFile>,
 ) {
     Column {
         LazyRow(
@@ -235,7 +235,7 @@ private fun ArchiveTab(
                             } else {
                                 DiskRow(
                                     entry = entry,
-                                    downloaded = library.fileFor(entry).name in downloaded,
+                                    downloaded = entry.fileName in downloaded,
                                     queued = entry.url in queued,
                                     progress = progress?.takeIf { it.request.entry.url == entry.url },
                                     onQueue = { library.enqueue(entry) },
@@ -308,7 +308,7 @@ private fun DiskRow(
 }
 
 @Composable
-private fun LibraryTab(files: List<File>, hostedDisk: String?, library: DiskLibrary) {
+private fun LibraryTab(files: List<LibraryFile>, hostedDisk: String?, library: DiskLibrary) {
     if (files.isEmpty()) {
         CenteredBox {
             Text(
@@ -332,7 +332,7 @@ private fun LibraryTab(files: List<File>, hostedDisk: String?, library: DiskLibr
                     )
                 },
                 supportingContent = {
-                    Text(listOfNotNull(formatSize(file.length()), if (hosted) "Hosted" else null).joinToString("  ·  "))
+                    Text(listOfNotNull(formatSize(file.size), if (hosted) "Hosted" else null).joinToString("  ·  "))
                 },
                 leadingContent = {
                     IconBadge(

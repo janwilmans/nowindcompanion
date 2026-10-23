@@ -1,5 +1,6 @@
 package nl.myquest.nowindcompanion
 
+import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -8,8 +9,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -21,9 +20,12 @@ data class DownloadProgress(val request: DownloadRequest, val bytes: Long, val t
         get() = if (total > 0) (bytes.toFloat() / total).coerceIn(0f, 1f) else null
 }
 
-// downloaded disk images in app storage, the download queue worker, and hosting a disk on the interface
+// a downloaded disk image, a snapshot so the UI does not query the storage provider while drawing
+data class LibraryFile(val name: String, val size: Long, val document: DocumentFile)
+
+// downloaded disk images in Download/nowindcompanion/disks, the download queue worker, and hosting a disk on the interface
 class DiskLibrary(
-    private val dir: File,
+    private val storage: StorageFolder,
     private val scope: CoroutineScope,
     private val client: FTDIClient,
     private val state: HostState,
@@ -42,23 +44,32 @@ class DiskLibrary(
     private val _progress = MutableStateFlow<DownloadProgress?>(null)
     val progress: StateFlow<DownloadProgress?> = _progress
 
-    private val _files = MutableStateFlow<List<File>>(emptyList())
-    val files: StateFlow<List<File>> = _files
+    private val _files = MutableStateFlow<List<LibraryFile>>(emptyList())
+    val files: StateFlow<List<LibraryFile>> = _files
+
+    // null until the user granted access to the storage folder
+    @Volatile
+    private var dir: DocumentFile? = null
 
     // short user facing notifications, shown as snackbar
     private val _events = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val events: SharedFlow<String> = _events
 
     init {
-        dir.mkdirs()
-        refreshFiles()
         scope.launch(Dispatchers.IO) { worker() }
     }
 
-    fun fileFor(entry: RemoteEntry): File = File(dir, entry.fileName)
+    // blocking, call from a background thread
+    fun setFolder(folder: DocumentFile?) {
+        dir = folder
+        refreshFiles()
+        if (folder != null) wake.trySend(Unit)
+    }
 
     // an empty file is what is left when the device lost power right after a download, fetch it again
-    fun isDownloaded(entry: RemoteEntry): Boolean = fileFor(entry).length() > 0
+    private fun find(name: String): DocumentFile? = dir?.findFile(name)?.takeIf { it.isFile && it.length() > 0 }
+
+    private fun isDownloaded(entry: RemoteEntry): Boolean = _files.value.any { it.name == entry.fileName }
 
     fun enqueue(entry: RemoteEntry) {
         if (isDownloaded(entry)) {
@@ -73,9 +84,8 @@ class DiskLibrary(
     }
 
     fun downloadAndHost(entry: RemoteEntry) {
-        val file = fileFor(entry)
-        if (file.length() > 0) {
-            host(file)
+        _files.value.find { it.name == entry.fileName }?.let {
+            host(it.document)
             return
         }
         synchronized(lock) {
@@ -95,29 +105,44 @@ class DiskLibrary(
         }
     }
 
-    fun host(file: File) {
+    fun host(file: LibraryFile) = host(file.document)
+
+    // the disk that was hosted last time, when it is still in the library
+    fun hostByName(name: String) {
+        scope.launch(Dispatchers.IO) { find(name)?.let { host(it) } }
+    }
+
+    private fun host(file: DocumentFile) {
         scope.launch(Dispatchers.IO) {
+            val name = file.name.orEmpty()
             try {
-                val image = readDiskImage(file)
+                val image = readDiskImage(name) { storage.open(file) }
                 client.insertDisk(image)
-                state.hostedDisk.value = file.name
-                settings.setHostedDisk(file.name)
-                state.write("Hosting ${file.name} (${image.size} bytes)")
-                _events.tryEmit("Hosting ${file.name}")
+                state.hostedDisk.value = name
+                settings.setHostedDisk(name)
+                state.write("Hosting $name (${image.size} bytes)")
+                _events.tryEmit("Hosting $name")
             } catch (e: Exception) {
-                Debug.error("host ${file.name} failed: $e")
-                _events.tryEmit("Could not load ${file.name}: ${e.message}")
+                Debug.error("host $name failed: $e")
+                _events.tryEmit("Could not load $name: ${e.message}")
             }
         }
     }
 
-    fun delete(file: File) {
-        file.delete()
-        refreshFiles()
+    fun delete(file: LibraryFile) {
+        scope.launch(Dispatchers.IO) {
+            file.document.delete()
+            refreshFiles()
+        }
     }
 
     private fun refreshFiles() {
-        _files.value = dir.listFiles { f -> f.isFile && f.length() > 0 && !f.name.endsWith(".part") }
+        _files.value = dir?.listFiles()
+            ?.mapNotNull { f ->
+                val name = f.name ?: return@mapNotNull null
+                val size = f.length()
+                if (f.isFile && size > 0 && !name.endsWith(".part")) LibraryFile(name, size, f) else null
+            }
             ?.sortedBy { it.name.lowercase() }
             .orEmpty()
     }
@@ -157,13 +182,14 @@ class DiskLibrary(
 
     // blocking, runs on the worker; writes to a .part file first so a broken download never looks complete.
     // returns the file to host: the downloaded file, or the first disk of a multi disk set
-    private fun download(request: DownloadRequest): File {
+    private fun download(request: DownloadRequest): DocumentFile {
         val entry = request.entry
-        val target = fileFor(entry)
-        if (target.length() > 0) return target
-        val part = File(dir, target.name + ".part")
+        val dir = dir ?: throw IOException("no access to the storage folder, choose it first")
+        find(entry.fileName)?.let { return it }
+        val part = dir.replaceFile(entry.fileName + ".part")
         state.write("Download: ${entry.url}")
         val connection = openHttpConnection(entry.url)
+        var saved = false   // renamed to the final name, part now refers to the downloaded disk
         try {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) {
                 throw IOException("HTTP ${connection.responseCode}")
@@ -176,20 +202,19 @@ class DiskLibrary(
                     total = header.size ?: -1
                     disks = header.disks
                 }
-                FileOutputStream(part).use { output ->
-                    copyWithProgress(request, input, output, total)
-                    output.fd.sync()
-                }
+                storage.write(part) { output -> copyWithProgress(request, input, output, total) }
             }
-            val file = if (disks > 1) splitDiskSet(entry, part, disks) else {
-                if (!part.renameTo(target)) throw IOException("could not save ${target.name}")
-                target
+            val file = if (disks > 1) splitDiskSet(dir, entry, part, disks) else {
+                dir.findFile(entry.fileName)?.delete()
+                if (!part.renameTo(entry.fileName)) throw IOException("could not save ${entry.fileName}")
+                saved = true
+                part
             }
             state.write("Done.")
             return file
         } finally {
             connection.disconnect()
-            part.delete()
+            if (!saved) part.delete()
         }
     }
 
@@ -224,16 +249,13 @@ class DiskLibrary(
     }
 
     // all disks of a set come in one download, store them as separate disk images
-    private fun splitDiskSet(entry: RemoteEntry, part: File, disks: Int): File {
-        val data = part.readBytes()
+    private fun splitDiskSet(dir: DocumentFile, entry: RemoteEntry, part: DocumentFile, disks: Int): DocumentFile {
+        val data = storage.open(part).use { it.readBytes() }
         if (data.size % disks != 0) throw IOException("${entry.name}: ${data.size} bytes can not be split in $disks disks")
         val diskSize = data.size / disks
         val files = diskSetFileNames(entry.name, disks).mapIndexed { index, name ->
-            File(dir, name).apply {
-                FileOutputStream(this).use { output ->
-                    output.write(data, index * diskSize, diskSize)
-                    output.fd.sync()
-                }
+            dir.replaceFile(name).also { file ->
+                storage.write(file) { output -> output.write(data, index * diskSize, diskSize) }
             }
         }
         state.write("Saved $disks disks of ${entry.name}")

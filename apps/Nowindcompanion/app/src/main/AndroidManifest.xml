@@ -12,7 +12,8 @@
     <!-- inform the installer we require USB OGT (hosting) -->
     <uses-feature android:name="android.hardware.usb.host" />
     
-    <!-- usesCleartextTraffic: user added disk image sources may be plain http sites -->
+    <!-- usesCleartextTraffic: user added disk image sources may be plain http sites
+         requestLegacyExternalStorage: lets Android 10 create Download/nowindcompanion before the folder picker opens -->
     <application
         android:name=".NowindApp"
         android:allowBackup="true"
@@ -24,6 +25,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Nowindcompanion"
         android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true"
         tools:targetApi="31">
 
         <!-- singleTop: connecting the interface while the app is open must not start a second copy -->

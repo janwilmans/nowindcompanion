@@ -1,13 +1,18 @@
 package nl.myquest.nowindcompanion
 
 import android.content.Context
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.json.JSONObject
+
+private const val SETTINGS_FILE = "settings.json"
 
 data class Settings(
     val enableDos2: Boolean = false,    // off by default, some games (Puyo Puyo) do not like the way DOS2 is skipped
@@ -93,5 +98,60 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setHostedDisk(fileName: String) {
         context.dataStore.edit { it[Keys.HOSTED_DISK] = fileName }
+    }
+
+    // settings.json in the storage folder is the copy that survives a reinstall: restore it when the folder becomes
+    // available, then save it on every change. Blocking, call on Dispatchers.IO
+    suspend fun restoreFrom(storage: StorageFolder, root: DocumentFile) {
+        val text = readSettingsFile(storage, root) ?: return
+        try {
+            val json = JSONObject(text)
+            context.dataStore.edit { it.readJson(json) }
+        } catch (e: Exception) {
+            Debug.error("reading $SETTINGS_FILE failed: $e")
+        }
+    }
+
+    // suspends while saving
+    suspend fun saveTo(storage: StorageFolder, root: DocumentFile) {
+        var written = readSettingsFile(storage, root)
+        context.dataStore.data.collect { preferences ->
+            val text = preferences.toJson().toString(2)
+            if (text == written) return@collect
+            try {
+                val file = root.findFile(SETTINGS_FILE) ?: root.createFile("application/json", SETTINGS_FILE)
+                if (file != null) {
+                    storage.write(file) { it.write(text.toByteArray()) }
+                    written = text
+                }
+            } catch (e: Exception) {
+                Debug.error("writing $SETTINGS_FILE failed: $e")
+            }
+        }
+    }
+
+    private fun readSettingsFile(storage: StorageFolder, root: DocumentFile): String? =
+        root.findFile(SETTINGS_FILE)?.takeIf { it.isFile }?.let { file ->
+            try {
+                storage.open(file).use { it.readBytes().decodeToString() }
+            } catch (e: Exception) {
+                Debug.error("reading $SETTINGS_FILE failed: $e")
+                null
+            }
+        }
+
+    // the settings are booleans and strings only, so the json types tell which kind of key to restore
+    private fun Preferences.toJson() = JSONObject().apply {
+        asMap().forEach { (key, value) -> put(key.name, value) }
+    }
+
+    private fun MutablePreferences.readJson(json: JSONObject) {
+        clear()
+        json.keys().forEach { name ->
+            when (val value = json.get(name)) {
+                is Boolean -> this[booleanPreferencesKey(name)] = value
+                is String -> this[stringPreferencesKey(name)] = value
+            }
+        }
     }
 }
