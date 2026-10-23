@@ -29,6 +29,7 @@ object Routes {
     const val BROWSE = "browse"
     const val SETTINGS = "settings"
     const val DEBUG = "debug"
+    const val FIRMWARE = "firmware"
 }
 
 @Composable
@@ -91,6 +92,16 @@ fun NowindNavHost(app: NowindApp) {
                 onRemoveSource = { app.appScope.launch { app.settings.removeSource(it.url) } },
                 onAddSource = { app.appScope.launch { app.settings.addSource(it) } },
                 onEditDefaultSource = { name, kind -> app.appScope.launch { app.settings.setDefaultSource(name, kind) } },
+                onFirmware = { nav.navigate(Routes.FIRMWARE) },
+                onBack = back,
+            )
+        }
+        composable(Routes.FIRMWARE) {
+            FirmwareScreen(
+                firmware = app.firmware,
+                connection = connection,
+                firmwareSource = settings.firmwareSource,
+                onFirmwareSource = { app.appScope.launch { app.settings.setFirmwareSource(it) } },
                 onBack = back,
             )
         }

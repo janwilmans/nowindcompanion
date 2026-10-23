@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import com.ftdi.j2xx.D2xxManager
 import com.ftdi.j2xx.D2xxManager.FtDeviceInfoListNode
 import com.ftdi.j2xx.FT_Device
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -65,6 +66,13 @@ class FTDIClient(
 
     // set from the UI thread, swapped in by the hosting thread between commands
     private val pendingDisk = AtomicReference<ByteArray?>(null)
+
+    // a firmware update or verify, run by the hosting thread instead of hosting, see withFlashLink
+    private class FlashJob(val block: (FlashLink) -> Unit) {
+        val done = CompletableDeferred<Unit>()
+    }
+
+    private val pendingFlash = AtomicReference<FlashJob?>(null)
 
     @Volatile
     private var running = false
@@ -206,6 +214,11 @@ class FTDIClient(
         var pollDelayMs = minPollDelayMs
 
         while (running) {
+            pendingFlash.getAndSet(null)?.let {
+                runFlashJob(ftdiDevice, it)
+                pollDelayMs = minPollDelayMs
+                continue
+            }
             val receivedBytes = ftdiDevice.queueStatus
             if (receivedBytes == -1) // we lost the connection
             {
@@ -241,6 +254,57 @@ class FTDIClient(
         }
     }
 
+    // the MSX runs the flash writer instead of the Nowind driver, so nothing else may use the interface meanwhile
+    private fun runFlashJob(ftdiDevice: FT_Device, job: FlashJob) {
+        val readAndWriteBuffer = 3.toByte()
+        ftdiDevice.purge(readAndWriteBuffer)
+        try {
+            job.block(DeviceLink(ftdiDevice))
+            job.done.complete(Unit)
+        } catch (e: Exception) {
+            job.done.completeExceptionally(e)
+        }
+        // the MSX starts over after a reset, bytes of the flash writer must not be read as Nowind commands
+        ftdiDevice.purge(readAndWriteBuffer)
+        commandQueue.clear()
+    }
+
+    private class DeviceLink(private val device: FT_Device) : FlashLink {
+        override fun write(data: ByteArray) {
+            val written = device.write(data)
+            if (written != data.size) throw IOException("writing to the interface failed ($written of ${data.size} bytes)")
+        }
+
+        override fun read(count: Int, timeoutMs: Long): ByteArray {
+            val data = ByteArray(count)
+            var received = 0
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (received < count) {
+                val available = device.queueStatus
+                if (available < 0) throw IOException("the interface was disconnected")
+                if (available == 0) {
+                    if (System.currentTimeMillis() > deadline) throw IOException("no answer from the MSX")
+                    Thread.sleep(1)
+                    continue
+                }
+                val chunk = ByteArray(minOf(available, count - received))
+                val read = device.read(chunk, chunk.size)
+                if (read < 0) throw IOException("reading from the interface failed")
+                chunk.copyInto(data, received, 0, read)
+                received += read
+            }
+            return data
+        }
+    }
+
+    // runs block on the hosting thread with direct access to the interface; blocks until it is done
+    suspend fun withFlashLink(block: (FlashLink) -> Unit) {
+        if (state.connection.value != ConnectionState.Hosting) throw IOException("the Nowind interface is not connected")
+        val job = FlashJob(block)
+        if (!pendingFlash.compareAndSet(null, job)) throw IOException("a firmware update is already running")
+        job.done.await()
+    }
+
     private fun host() = runBlocking {
         val handler_job = launch {
             while (true) {
@@ -248,6 +312,7 @@ class FTDIClient(
             }
         }
         open_and_run_ftdi_io()
+        pendingFlash.getAndSet(null)?.done?.completeExceptionally(IOException("the Nowind interface was disconnected"))
         // the handler may be waiting for MSX data that will never arrive, cancel it at its next yield()
         handler_job.cancelAndJoin()
         commandQueue.clear()

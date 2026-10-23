@@ -23,6 +23,8 @@ class NowindApp : Application() {
         private set
     lateinit var library: DiskLibrary
         private set
+    lateinit var firmware: FirmwareUpdater
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -30,6 +32,7 @@ class NowindApp : Application() {
         settings = SettingsRepository(this)
         client = FTDIClient(this, state)
         library = DiskLibrary(storage, appScope, client, state, settings)
+        firmware = FirmwareUpdater(this, appScope, client, settings)
 
         appScope.launch {
             // apply the stored settings before hosting starts, so 'debug information off' is honored from the start

@@ -12,13 +12,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -45,6 +49,7 @@ fun SettingsScreen(
     onRemoveSource: (DiskSource) -> Unit,
     onAddSource: (DiskSource) -> Unit,
     onEditDefaultSource: (String, SourceKind) -> Unit,
+    onFirmware: () -> Unit,
     onBack: () -> Unit,
 ) {
     // the hosting notification needs permission on Android 13+, without it the service still runs, just invisibly
@@ -96,6 +101,14 @@ fun SettingsScreen(
                     onCheckedChange = onEnableDos2
                 )
             }
+            Section("Interface") {
+                NavigationRow(
+                    icon = Icons.Rounded.Memory,
+                    title = "Firmware update",
+                    description = "Verify or update the firmware in the flash rom of the Nowind interface.",
+                    onClick = onFirmware
+                )
+            }
             Section("Diagnostics") {
                 SwitchRow(
                     icon = Icons.Rounded.BugReport,
@@ -106,6 +119,30 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun NavigationRow(icon: ImageVector, title: String, description: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconBadge(icon)
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null)
     }
 }
 
