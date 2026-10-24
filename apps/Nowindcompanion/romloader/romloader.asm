@@ -4,13 +4,15 @@
 ;   10 CLEAR 200,&HC400:BLOAD"LOADER.BIN",R
 ; GAME.ROM is a 32 KB image of pages 1 and 2 ($4000-$BFFF); the app already placed and mirrored the ROM in it.
 ; The loader copies it to the RAM of pages 1 and 2 and calls the INIT address of the ROM header,
-; the way the BIOS starts a cartridge: stack at $F380 and all hooks RET, as if no disk ROM was there.
+; the way the BIOS starts a cartridge: stack at $F380, all hooks RET as if no disk ROM was there,
+; and the VDP in SCREEN 1.
 ; The header is removed first, otherwise a reset starts the RAM copy (half overwritten by then) in a loop.
 ;
 ; assemble with nowindlibraries/Release/sjasm.exe, see make.bat
 
 ENASLT      equ $0024
 CHPUT       equ $00A2
+INIT32      equ $006F
 BDOS        equ $F37D               ; Disk BASIC entry for the BDOS functions
 RAMAD1      equ $F342               ; slot of the RAM in page 1, set by the disk ROM
 EXPTBL      equ $FCC1               ; slot of the main ROM
@@ -111,6 +113,9 @@ start:
         ld a,(page2Only)
         or a
         call nz,romPage1
+        ; the VDP as the BIOS leaves it when it starts the cartridges: SCREEN 1 with the font loaded.
+        ; Early ROMs (Sweet Acorn) only change some registers and keep what BASIC left in the others.
+        call INIT32
         pop hl
         ei
         call jumpHL
