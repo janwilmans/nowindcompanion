@@ -33,7 +33,9 @@ class NowindApp : Application() {
         client = FTDIClient(this, state)
         library = DiskLibrary(storage, appScope, client, state, settings) { assets.open("romloader.bin").use { it.readBytes() } }
         client.deviceFiles = StorageDeviceFiles(this, storage)
-        client.onChangeImage = { name -> library.hostByMsxName(name) }
+        client.onChangeImage = { name ->
+            appScope.launch { library.hostByKeyword(name, settings.settings.first().allSources.filter { it.enabled }) }
+        }
         firmware = FirmwareUpdater(this, appScope, client, settings, storage)
 
         appScope.launch {

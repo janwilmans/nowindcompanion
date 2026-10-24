@@ -125,16 +125,39 @@ class DiskLibrary(
         scope.launch(Dispatchers.IO) { find(name)?.let { host(it) } }
     }
 
-    // CALL IMAGE("GAME.DSK") on the MSX; MSX names are upper case and may leave out the extension
-    fun hostByMsxName(name: String) {
-        val candidates = if (name.contains('.')) listOf(name) else listOf(name, "$name.dsk", "$name.zip")
-        val file = candidates.firstNotNullOfOrNull { candidate -> _files.value.find { it.name.equals(candidate, ignoreCase = true) } }
-        if (file == null) {
-            state.write("CHANGEIMAGE: '$name' is not in the library")
-            _events.tryEmit("The MSX asked for $name, it is not in the library")
+    // _IMAGE("<keyword>") / CALL IMAGE on the MSX: a file of the library with that name (MSX names are upper case
+    // and may leave out the extension), else the first library file that matches the keywords, else the first
+    // match in the archive of the enabled sources, which is downloaded and hosted
+    fun hostByKeyword(name: String, sources: List<DiskSource>) {
+        val candidates = if (name.contains('.')) listOf(name) else listOf(name, "$name.dsk", "$name.zip", "$name.rom")
+        val exact = candidates.firstNotNullOfOrNull { candidate -> _files.value.find { it.name.equals(candidate, ignoreCase = true) } }
+        val keyword = imageKeyword(name)
+        // ROMs over 32 KB can not be started, a keyword should not end up there
+        val startable = _files.value.filter { !hasRomExtension(it.name) || it.size <= ROM_IMAGE_SIZE }
+        val file = exact ?: bestMatch(startable, keyword) { it.name.substringBeforeLast('.') }
+        if (file != null) {
+            state.write("CHANGEIMAGE: '$name' found in the library: ${file.name}")
+            host(file.document)
             return
         }
-        host(file.document)
+        scope.launch(Dispatchers.IO) {
+            val entry = sources.firstNotNullOfOrNull { source ->
+                try {
+                    findInArchive(archiveListing(source), keyword)
+                } catch (e: Exception) {
+                    Debug.error("CHANGEIMAGE: searching ${source.label} failed: $e")
+                    null
+                }
+            }
+            if (entry == null) {
+                state.write("CHANGEIMAGE: '$name' is not in the library or the archive")
+                _events.tryEmit("The MSX asked for $name, it is not in the library or the archive")
+                return@launch
+            }
+            state.write("CHANGEIMAGE: '$name' found in the archive: ${entry.name}")
+            _events.tryEmit("The MSX asked for $name, downloading ${entry.name}")
+            downloadAndHost(entry)
+        }
     }
 
     private fun host(file: DocumentFile) {

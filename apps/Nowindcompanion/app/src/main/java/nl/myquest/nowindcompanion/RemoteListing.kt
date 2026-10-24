@@ -16,7 +16,12 @@ data class RemoteEntry(
     val fromNowindApi: Boolean = false,
     // a cartridge ROM instead of a disk image, started with a loader disk, see RomDisk.kt
     val rom: Boolean = false,
+    val bytes: Long = -1,           // the exact size when the source tells it (the Nowind API), otherwise -1
 ) {
+    // a ROM over 32 KB (a MegaROM) can not be started with the loader disk
+    val startable: Boolean
+        get() = !rom || bytes <= ROM_IMAGE_SIZE
+
     val isDiskImage: Boolean
         get() = !isDirectory && !rom && (fromNowindApi || hasDiskExtension(name))
 
@@ -81,7 +86,7 @@ fun parseNowindApiListing(text: String, listUrl: String, rom: Boolean = false): 
     return lines.mapIndexedNotNull { index, line ->
         val name = line.substringBefore('\t').trim()
         val bytes = line.substringAfter('\t', "").trim().toLongOrNull() ?: return@mapIndexedNotNull null
-        RemoteEntry(name, "$listUrl&download=$index", isDirectory = false, size = formatSize(bytes), fromNowindApi = true, rom = rom)
+        RemoteEntry(name, "$listUrl&download=$index", isDirectory = false, size = formatSize(bytes), fromNowindApi = true, rom = rom, bytes = bytes)
     }
 }
 
