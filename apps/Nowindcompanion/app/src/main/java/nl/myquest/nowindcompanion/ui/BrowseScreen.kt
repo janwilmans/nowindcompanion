@@ -30,11 +30,16 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Eject
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
@@ -45,6 +50,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -57,6 +63,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -82,6 +89,15 @@ import nl.myquest.nowindcompanion.SkipDisk
 import kotlinx.coroutines.launch
 import nl.myquest.nowindcompanion.LibraryFile
 
+// what the user keeps per library file (from the settings): the working mark and the image's own DOS2 setting
+class ImageMarks(
+    val working: Set<String>,
+    val imageDos2: Map<String, Boolean>,
+    val defaultDos2: Boolean,
+    val onWorking: (String, Boolean) -> Unit,
+    val onImageDos2: (String, Boolean?) -> Unit,
+)
+
 @Composable
 fun BrowseScreen(
     library: DiskLibrary,
@@ -90,6 +106,7 @@ fun BrowseScreen(
     skipDisk: SkipDisk,
     onSkipDisk: (SkipDisk) -> Unit,
     commands: Long,                 // blinks the activity light when the MSX reads or writes
+    marks: ImageMarks,
     onBack: () -> Unit,
 ) {
     val viewModel: BrowseViewModel = viewModel()
@@ -166,8 +183,8 @@ fun BrowseScreen(
             }
             Box(Modifier.weight(1f)) {
                 when (tab) {
-                    0 -> ArchiveTab(viewModel, sources, source, msxFilter, stack, listing, filter, library, pending, progress, files)
-                    else -> LibraryTab(files, hostedDisk, library)
+                    0 -> ArchiveTab(viewModel, sources, source, msxFilter, stack, listing, filter, library, pending, progress, files, marks)
+                    else -> LibraryTab(files, hostedDisk, library, marks)
                 }
             }
             DownloadBar(progress, pending, library)
@@ -189,6 +206,7 @@ private fun ArchiveTab(
     pending: List<DownloadRequest>,
     progress: DownloadProgress?,
     files: List<LibraryFile>,
+    marks: ImageMarks,
 ) {
     Column {
         LazyRow(
@@ -305,6 +323,7 @@ private fun ArchiveTab(
                                 DiskRow(
                                     entry = entry,
                                     downloaded = entry.fileName in downloaded,
+                                    working = entry.fileName in marks.working,
                                     queued = entry.url in queued,
                                     progress = progress?.takeIf { it.request.entry.url == entry.url },
                                     onQueue = { library.enqueue(entry) },
@@ -333,6 +352,7 @@ private fun FolderRow(entry: RemoteEntry, onClick: () -> Unit) {
 private fun DiskRow(
     entry: RemoteEntry,
     downloaded: Boolean,
+    working: Boolean,
     queued: Boolean,
     progress: DownloadProgress?,
     onQueue: () -> Unit,
@@ -340,6 +360,7 @@ private fun DiskRow(
 ) {
     val status = when {
         progress != null -> "Downloading…"
+        downloaded && working -> "Working"
         downloaded -> "Downloaded"
         queued -> "Queued"
         else -> null
@@ -381,7 +402,7 @@ private fun DiskRow(
 }
 
 @Composable
-private fun LibraryTab(files: List<LibraryFile>, hostedDisk: String?, library: DiskLibrary) {
+private fun LibraryTab(files: List<LibraryFile>, hostedDisk: String?, library: DiskLibrary, marks: ImageMarks) {
     if (files.isEmpty()) {
         CenteredBox {
             Text(
@@ -405,7 +426,9 @@ private fun LibraryTab(files: List<LibraryFile>, hostedDisk: String?, library: D
                     )
                 },
                 supportingContent = {
-                    Text(listOfNotNull(formatSize(file.size), if (hosted) "Hosted" else null).joinToString("  ·  "))
+                    val dos2 = marks.imageDos2[file.name]?.let { if (it) "DOS2 on" else "DOS2 off" }
+                    val working = if (file.name in marks.working) "Working" else null
+                    Text(listOfNotNull(formatSize(file.size), if (hosted) "Hosted" else null, working, dos2).joinToString("  ·  "))
                 },
                 leadingContent = {
                     IconBadge(
@@ -416,15 +439,61 @@ private fun LibraryTab(files: List<LibraryFile>, hostedDisk: String?, library: D
                 },
                 trailingContent = {
                     Row {
-                        IconButton(onClick = { library.delete(file) }, enabled = !hosted) {
-                            Icon(Icons.Rounded.Delete, contentDescription = "Delete")
-                        }
+                        LibraryMenu(file, hosted, library, marks)
                         FilledTonalIconButton(onClick = { library.host(file) }, enabled = !hosted) {
                             Icon(Icons.Rounded.PlayArrow, contentDescription = "Host")
                         }
                     }
                 },
                 colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.background),
+            )
+        }
+    }
+}
+
+// working mark, the DOS2 setting of the image and delete
+@Composable
+private fun LibraryMenu(file: LibraryFile, hosted: Boolean, library: DiskLibrary, marks: ImageMarks) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Rounded.MoreVert, contentDescription = "More for ${file.name}")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            val working = file.name in marks.working
+            DropdownMenuItem(
+                text = { Text("Working") },
+                leadingIcon = { Checkbox(checked = working, onCheckedChange = null) },
+                onClick = {
+                    marks.onWorking(file.name, !working)
+                    open = false
+                }
+            )
+            HorizontalDivider()
+            val own = marks.imageDos2[file.name]
+            listOf(
+                null to "DOS2 default (${if (marks.defaultDos2) "on" else "off"})",
+                true to "DOS2 on",
+                false to "DOS2 off",
+            ).forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    leadingIcon = { RadioButton(selected = own == value, onClick = null) },
+                    onClick = {
+                        marks.onImageDos2(file.name, value)
+                        open = false
+                    }
+                )
+            }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("Delete") },
+                leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
+                enabled = !hosted,
+                onClick = {
+                    library.delete(file)
+                    open = false
+                }
             )
         }
     }

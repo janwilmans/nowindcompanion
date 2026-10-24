@@ -74,7 +74,12 @@ For example, `nemesis 1986` lists *Nemesis (1986)* first, then the other *Nemesi
 The Library tab lists everything you have downloaded, disks and ROMs together. ROMs have a chip icon. The disk being hosted is marked **Hosted**.
 
 - The **play** button hosts a file.
-- The **bin** button deletes it (not while it is hosted).
+- The **⋮** menu of a file has:
+  - **Working**: mark a disk or ROM you have checked and that works. The mark shows in the Library and, for downloaded files, in the Archive.
+  - **DOS2 default / DOS2 on / DOS2 off**: the image's own DOS2 setting. An image with its own setting always boots that way. An image without one uses **Enable DOS2** from Settings. Use **DOS2 off** for games that don't work with DOS2.
+  - **Delete** (not while the file is hosted).
+
+  The status line under the name shows *Working* and the image's own DOS2 setting. The working marks and DOS2 settings are kept in `settings.json`, so they come back after a reinstall.
 
 The last hosted disk is inserted again when the app starts.
 
@@ -155,7 +160,10 @@ _IMAGE("PUYO PUYO+1")
 _IMAGE("+2")
 ```
 
-`_IMAGE("PUYO PUYO+1")` hosts Puyo Puyo and boots DOS1 from the next boot. `_IMAGE("+2")` only turns DOS2 on. This is the same setting as **Enable DOS2** in Settings. It stays as you set it, and it takes effect when you reset the MSX.
+- **With a name**, the setting belongs to the image that is found. `_IMAGE("PUYO PUYO+1")` hosts Puyo Puyo with DOS2 off, and Puyo Puyo keeps booting with DOS2 off every time you host it, until you change it. This is the same setting as **DOS2 on/off** in the Library menu.
+- **Without a name**, `_IMAGE("+2")` and `_IMAGE("+1")` change the default for images without their own setting: **Enable DOS2** in Settings.
+
+Either way it takes effect when you reset the MSX.
 
 **Examples:**
 
@@ -165,7 +173,7 @@ _IMAGE("+2")
 | `_IMAGE("METAL GEAR")` | *Metal Gear (1987)(Konami)* |
 | `_IMAGE("KNIGHTMARE,KONAMI")` | *Knightmare. Majyo Densetsu (1986)(Konami)* |
 | `_IMAGE("NEMESIS,KONAMI")` | *Gradius. Nemesis (1986)(Konami)* |
-| `_IMAGE("ALESTE 2,EN+2")` | *Aleste 2 (1988)(Compile)(en)(Disk1of3)*, with DOS2 from the next boot |
+| `_IMAGE("ALESTE 2,EN+2")` | *Aleste 2 (1988)(Compile)(en)(Disk1of3)*, and this disk boots with DOS2 from now on |
 
 (The results depend on the sources you have enabled.)
 
@@ -216,7 +224,7 @@ Hold a key directly after switching on or resetting the MSX:
 - **Disk image sources.** The sources Browse searches. Switch them on and off, delete them, or add one with **Add source**.
   - When you add a source, the app checks it and detects what kind of source it is: a Nowind API, a directory listing or a web page with links.
   - The **default source** is empty until you enter a name for it. A name without dots stands for a Nowind API: `example` means `https://api.example.com/nowind.php`. A name with dots is used as a web address.
-- **Enable DOS2.** Boots MSX-DOS 2 on MSX2 and newer. It's off by default, because some games (*Puyo Puyo*) don't work with DOS2. It takes effect at the next reset. `_IMAGE("...+2")` and `_IMAGE("...+1")` change this setting too.
+- **Enable DOS2.** Boots MSX-DOS 2 on MSX2 and newer. It's off by default, because some games (*Puyo Puyo*) don't work with DOS2. It takes effect at the next reset. This is the default: an image with its own DOS2 setting (Library menu, or `_IMAGE("name+1")`) boots its own way. `_IMAGE("+2")` and `_IMAGE("+1")` without a name change this default.
 - **Firmware update.** See [Firmware update](#firmware-update).
 - **Enable debug information.** Logs the communication with the MSX in the debug log (see [The Nowind screen](#the-nowind-screen)). With this off, all debug output is off.
 
@@ -292,7 +300,7 @@ Everything lives in `Download/nowindcompanion`. You can see it from a computer o
 |---|---|
 | The app doesn't find the interface | Check the OTG cable or adapter, and that the phone supports USB host. Reconnect the cable. |
 | The MSX doesn't boot from the disk | Insert the cartridge with the MSX off, try another slot, and connect the phone before you switch on the MSX. |
-| A game fails with DOS2 | Turn off **Enable DOS2**, or use `_IMAGE("...+1")`, then reset. |
+| A game fails with DOS2 | Choose **DOS2 off** in the Library menu of that game, or use `_IMAGE("name+1")`, then reset. |
 | A ROM shows "not supported yet" | MegaROMs, ROMs over 32 KB and ROMs for page 0 can't be started yet. Look for a disk version in the archive. |
 | A ROM keeps restarting or crashes | Switch the MSX off and on once; a reset keeps the RAM. |
 | Hosting stops when the screen goes off | Turn on **Keep hosting in the background** in the settings mmenu. |

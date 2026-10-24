@@ -37,12 +37,13 @@ class NowindApp : Application() {
         client.onChangeImage = { text ->
             val request = parseImageRequest(text)
             appScope.launch {
-                request.enableDos2?.let { enable ->
+                // with a name it is the setting of that image, see hostByKeyword; alone it is the default
+                if (request.name.isBlank()) request.enableDos2?.let { enable ->
                     settings.setEnableDos2(enable)
-                    state.write("CHANGEIMAGE: DOS2 ${if (enable) "on" else "off"} from the next boot")
+                    state.write("CHANGEIMAGE: DOS2 ${if (enable) "on" else "off"} by default, from the next boot")
                 }
                 if (request.name.isNotBlank()) {
-                    library.hostByKeyword(request.name, settings.settings.first().allSources.filter { it.enabled })
+                    library.hostByKeyword(request.name, settings.settings.first().allSources.filter { it.enabled }, request.enableDos2)
                 }
             }
         }
@@ -50,9 +51,10 @@ class NowindApp : Application() {
 
         appScope.launch {
             // apply the stored settings before hosting starts, so 'debug information off' is honored from the start
-            applySettings(settings.settings.first())
+            applySettings(settings.settings.first(), state.hostedDisk.value)
             client.start()
-            settings.settings.collect { applySettings(it) }
+            combine(settings.settings, state.hostedDisk) { value, hosted -> value to hosted }
+                .collect { (value, hosted) -> applySettings(value, hosted) }
         }
 
         // at startup, or once the user granted access to the storage folder (first run, after a reinstall)
@@ -88,9 +90,10 @@ class NowindApp : Application() {
     }
 
     // FTDIClient reads these from its own thread, so mirror the persisted values into volatile fields
-    private fun applySettings(value: Settings) {
+    // DOS2 is the setting of the hosted image when it has one
+    private fun applySettings(value: Settings, hosted: String?) {
         Debug.enabled = value.debugEnabled
-        client.enableDos2 = value.enableDos2
+        client.enableDos2 = value.dos2For(hosted)
     }
 }
 

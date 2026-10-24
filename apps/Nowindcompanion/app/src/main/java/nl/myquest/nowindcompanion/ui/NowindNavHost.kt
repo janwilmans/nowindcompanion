@@ -87,6 +87,13 @@ fun NowindNavHost(app: NowindApp) {
                 skipDisk = skipDisk,
                 onSkipDisk = { app.state.skipDisk.value = it },
                 commands = commands,
+                marks = ImageMarks(
+                    working = settings.working,
+                    imageDos2 = settings.imageDos2,
+                    defaultDos2 = settings.enableDos2,
+                    onWorking = { name, working -> app.appScope.launch { app.settings.setWorking(name, working) } },
+                    onImageDos2 = { name, enable -> app.appScope.launch { app.settings.setImageDos2(name, enable) } },
+                ),
                 onBack = back,
             )
         }

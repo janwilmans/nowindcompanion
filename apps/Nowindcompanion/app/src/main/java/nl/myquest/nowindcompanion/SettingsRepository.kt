@@ -25,11 +25,32 @@ data class Settings(
     val sources: List<DiskSource> = emptyList(),    // added by the user, the default source is not in here
     val firmwareSource: String = "",    // as entered, see expandFirmwareName; empty: not set
     val firmwareErase: EraseMethod = EraseMethod.Chip,
+    val working: Set<String> = emptySet(),          // file names of the library marked as checked / working
+    val imageDos2: Map<String, Boolean> = emptyMap(),   // file name -> DOS2 for that image, overrides enableDos2
 ) {
     // all places to find disk images, the built-in default first
     val allSources: List<DiskSource>
         get() = listOf(defaultSource(defaultSourceName, defaultSourceKind, defaultSourceEnabled)) + sources
+
+    // the image's own setting, else the default from Settings
+    fun dos2For(image: String?): Boolean = image?.let { imageDos2[it] } ?: enableDos2
 }
+
+// one file name per line; file names can not contain a line break
+fun encodeNames(names: Set<String>): String = names.sorted().joinToString("\n")
+
+fun decodeNames(text: String?): Set<String> = text.orEmpty().lines().filter { it.isNotEmpty() }.toSet()
+
+// '1<TAB>name' for DOS2 on, '0<TAB>name' for off
+fun encodeImageDos2(map: Map<String, Boolean>): String =
+    map.entries.sortedBy { it.key }.joinToString("\n") { "${if (it.value) 1 else 0}\t${it.key}" }
+
+fun decodeImageDos2(text: String?): Map<String, Boolean> =
+    text.orEmpty().lines().mapNotNull { line ->
+        val value = line.substringBefore('\t', "")
+        val name = line.substringAfter('\t', "")
+        if (name.isEmpty() || value !in setOf("0", "1")) null else name to (value == "1")
+    }.toMap()
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
@@ -46,6 +67,8 @@ class SettingsRepository(private val context: Context) {
         val SOURCES = stringPreferencesKey("sources")
         val FIRMWARE_SOURCE = stringPreferencesKey("firmware_source")
         val FIRMWARE_ERASE = stringPreferencesKey("firmware_erase")
+        val WORKING = stringPreferencesKey("working_images")
+        val IMAGE_DOS2 = stringPreferencesKey("image_dos2")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { it.toSettings() }
@@ -61,10 +84,27 @@ class SettingsRepository(private val context: Context) {
         sources = decodeSources(this[Keys.SOURCES]),
         firmwareSource = this[Keys.FIRMWARE_SOURCE] ?: "",
         firmwareErase = EraseMethod.values().find { it.name == this[Keys.FIRMWARE_ERASE] } ?: EraseMethod.Chip,
+        working = decodeNames(this[Keys.WORKING]),
+        imageDos2 = decodeImageDos2(this[Keys.IMAGE_DOS2]),
     )
 
     suspend fun setEnableDos2(value: Boolean) {
         context.dataStore.edit { it[Keys.ENABLE_DOS2] = value }
+    }
+
+    suspend fun setWorking(image: String, working: Boolean) {
+        context.dataStore.edit {
+            val names = decodeNames(it[Keys.WORKING])
+            it[Keys.WORKING] = encodeNames(if (working) names + image else names - image)
+        }
+    }
+
+    // null: the image follows the default from Settings again
+    suspend fun setImageDos2(image: String, enable: Boolean?) {
+        context.dataStore.edit {
+            val map = decodeImageDos2(it[Keys.IMAGE_DOS2])
+            it[Keys.IMAGE_DOS2] = encodeImageDos2(if (enable == null) map - image else map + (image to enable))
+        }
     }
 
     suspend fun setDebugEnabled(value: Boolean) {

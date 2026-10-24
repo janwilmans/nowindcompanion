@@ -128,7 +128,8 @@ class DiskLibrary(
     // _IMAGE("<keyword>") / CALL IMAGE on the MSX: a file of the library with that name (MSX names are upper case
     // and may leave out the extension), else the first library file that matches the keywords, else the first
     // match in the archive of the enabled sources, which is downloaded and hosted
-    fun hostByKeyword(name: String, sources: List<DiskSource>) {
+    // enableDos2: '+2' / '+1', kept as the setting of the image that is found
+    fun hostByKeyword(name: String, sources: List<DiskSource>, enableDos2: Boolean? = null) {
         val candidates = if (name.contains('.')) listOf(name) else listOf(name, "$name.dsk", "$name.zip", "$name.rom")
         val exact = candidates.firstNotNullOfOrNull { candidate -> _files.value.find { it.name.equals(candidate, ignoreCase = true) } }
         val keyword = imageKeyword(name)
@@ -137,7 +138,10 @@ class DiskLibrary(
         val file = exact ?: bestMatch(startable, keyword) { it.name.substringBeforeLast('.') }
         if (file != null) {
             state.write("CHANGEIMAGE: '$name' found in the library: ${file.name}")
-            host(file.document)
+            scope.launch {
+                enableDos2?.let { settings.setImageDos2(file.name, it) }
+                host(file.document)
+            }
             return
         }
         scope.launch(Dispatchers.IO) {
@@ -156,6 +160,7 @@ class DiskLibrary(
             }
             state.write("CHANGEIMAGE: '$name' found in the archive: ${entry.name}")
             _events.tryEmit("The MSX asked for $name, downloading ${entry.name}")
+            enableDos2?.let { settings.setImageDos2(entry.fileName, it) }
             downloadAndHost(entry)
         }
     }
