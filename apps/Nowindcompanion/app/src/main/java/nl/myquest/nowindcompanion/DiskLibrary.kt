@@ -117,6 +117,18 @@ class DiskLibrary(
         scope.launch(Dispatchers.IO) { find(name)?.let { host(it) } }
     }
 
+    // CALL IMAGE("GAME.DSK") on the MSX; MSX names are upper case and may leave out the extension
+    fun hostByMsxName(name: String) {
+        val candidates = if (name.contains('.')) listOf(name) else listOf(name, "$name.dsk", "$name.zip")
+        val file = candidates.firstNotNullOfOrNull { candidate -> _files.value.find { it.name.equals(candidate, ignoreCase = true) } }
+        if (file == null) {
+            state.write("CHANGEIMAGE: '$name' is not in the library")
+            _events.tryEmit("The MSX asked for $name, it is not in the library")
+            return
+        }
+        host(file.document)
+    }
+
     private fun host(file: DocumentFile) {
         scope.launch(Dispatchers.IO) {
             val name = file.name.orEmpty()

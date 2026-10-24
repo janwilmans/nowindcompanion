@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import java.io.IOException
+import java.util.Calendar
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
@@ -20,6 +21,42 @@ const val HARDCODED_READ_DATABLOCK_SIZE = 128
 
 // the host serves one disk, drive A: of the Nowind interface
 const val NUMBER_OF_DRIVES = 1
+
+// the only API of the COMMAND (extended BIOS) command
+const val API_NOWMAP = 0
+
+// these come in bulk (per sector or per character), they are not logged one by one
+private val quietCommands = setOf(
+    NowindCommand.DSKIO, NowindCommand.STDOUT, NowindCommand.AUXOUT, NowindCommand.DEVICEWRITE, NowindCommand.DEVICEREAD
+)
+
+// strips a string from outer double-quotes and anything outside them, 'pre("foo")bar' becomes 'foo'
+fun stripQuotes(text: String): String {
+    val first = text.indexOf('"')
+    if (first < 0) return text
+    val last = text.lastIndexOf('"')
+    if (first == last) return ""
+    return text.substring(first + 1, last)
+}
+
+// nowmap <drive_id> <partition> [/Nx] [/L]: lists the drives, or selects the partition of a harddisk image.
+// The host serves floppy disk images only, they have no partitions.
+fun nowMap(arguments: String, driveOffset: Int, hostedDisk: String?): String {
+    val usage = "usage: nowmap <drive_id> <partition> [/Nx] [/L]\r\n"
+    val listing = StringBuilder("Nowind Map v1.2\r\n")
+    var letter = 'A'
+    repeat(driveOffset) { listing.append("Drive ${letter++}: DiskRom\r\n") }
+    repeat(NUMBER_OF_DRIVES) { listing.append("Drive ${letter++}, driveId $it (${hostedDisk ?: "no disk"})\r\n") }
+    listing.append("\r\n")
+
+    val words = arguments.uppercase().split(' ', '\t').filter { it.isNotEmpty() }
+    if ("/L" in words) return listing.toString()
+    val args = words.filter { !it.startsWith("/") }
+    if (args.size != 2) return "error: no 2 arguments found\r\n$usage"
+    val driveId = args[0].toIntOrNull()
+    if (driveId == null || driveId !in 0 until NUMBER_OF_DRIVES) return "error: drive_id invalid!\r\n$usage"
+    return "error: drive is not a hdd!\r\n$usage"
+}
 
 // install https://plugins.jetbrains.com/plugin/7017-plantuml-integration
 // to view
@@ -64,13 +101,24 @@ class FTDIClient(
     private var diskimage: ByteArray = ByteArray(1024 * 1024)
     private var diskChanged = true
 
+    // receives a copy of the disk after a DSKIO write; null when the disk can not be saved, it is then write protected
+    private var saveDisk: ((ByteArray) -> Unit)? = null
+
+    // the number of drives of the disk roms that initialized before the Nowind interface, reported in DRIVES
+    private var driveOffset = 0
+
+    // characters printed by the MSX, logged per line
+    private val stdout = StringBuilder()
+    private val auxOut = StringBuilder()
+
     // the storage of the NOW: device, null until it is set up
     @Volatile
     var deviceFiles: DeviceFiles? = null
     private val nowDevice = NowDevice { deviceFiles }
 
-    // receives a copy of the disk after a DSKIO write; null when the disk can not be saved, it is then write protected
-    private var saveDisk: ((ByteArray) -> Unit)? = null
+    // CHANGEIMAGE (CALL IMAGE on the MSX) asks for a disk from the library by name
+    @Volatile
+    var onChangeImage: ((String) -> Unit)? = null
 
     @Volatile
     var enableDos2 = false
@@ -426,9 +474,185 @@ class FTDIClient(
         }
     }
 
-    private fun notImplemented(command: Command) {
-        // the C++ host ignores these without a reply, the MSX will time out
-        Debug.log("* command not implemented: ${command.toEnum()} (0x%02X), ignored, registers: $command".format(command.cmd))
+    private fun le16(offset: Int): Int = (diskimage[offset].toInt() and 0xFF) + 256 * (diskimage[offset + 1].toInt() and 0xFF)
+
+    // converts the boot sector (sector 0) into an MSX Disk Parameter Block, see GETDPB in protocol.md
+    private fun getDpb(command: Command) {
+        if (diskimage.size < 512) return
+        val bytesPerSector = le16(11)
+        val sectorsPerCluster = diskimage[13].toInt() and 0xFF
+        val firstFatSector = le16(14)
+        val fatCopies = diskimage[16].toInt() and 0xFF
+        val rootDirEntries = le16(17)
+        var numberOfSectors = le16(19)
+        val mediaType = diskimage[21].toInt() and 0xFF
+        val sectorsPerFat = le16(22)
+        if (numberOfSectors == 0) {
+            numberOfSectors = le16(32) + 65536 * le16(34)
+        }
+        if (bytesPerSector < 32 || sectorsPerCluster == 0) {
+            Debug.log("GETDPB: invalid boot sector, ignored")
+            return
+        }
+
+        val firstDirSector = (firstFatSector + fatCopies * sectorsPerFat) and 0xFFFF
+        val directorySizeInSectors = (rootDirEntries * 32 + bytesPerSector - 1) / bytesPerSector
+        val firstRecordSector = (firstDirSector + directorySizeInSectors) and 0xFFFF
+        val maxClusters = (((numberOfSectors - firstRecordSector) / sectorsPerCluster) + 1) and 0xFFFF
+
+        val dirMask = (bytesPerSector / 32) - 1
+        var dirShift = 0
+        while (dirMask and (1 shl dirShift) != 0) dirShift++
+        val clusMask = sectorsPerCluster - 1
+        var clusShift = 0
+        while (clusMask and (1 shl clusShift) != 0) clusShift++
+
+        responseQueue.addHeader()
+        responseQueue.add(command.getE())
+        responseQueue.add(command.getD())
+        responseQueue.add(mediaType)                    // 1 ID
+        responseQueue.add16(bytesPerSector)             // 2-3 SECSIZ
+        responseQueue.add(dirMask and 0xFF)             // 4 DIRMSK
+        responseQueue.add(dirShift)                     // 5 DIRSHFT
+        responseQueue.add(clusMask and 0xFF)            // 6 CLUSMSK
+        responseQueue.add(clusShift + 1)                // 7 CLUSSHFT
+        responseQueue.add16(firstFatSector)             // 8-9 FIRFAT
+        responseQueue.add(fatCopies)                    // 10 FATCNT
+        responseQueue.add(rootDirEntries and 0xFF)      // 11 MAXENT
+        responseQueue.add16(firstRecordSector)          // 12-13 FIRREC
+        responseQueue.add16(maxClusters)                // 14-15 MAXCLUS
+        responseQueue.add(sectorsPerFat and 0xFF)       // 16 FATSIZ
+        responseQueue.add16(firstDirSector)             // 17-18 FIRDIR
+    }
+
+    // the new image is used from the next command on, the MSX sees it as a disk change.
+    // Without save the disk is write protected.
+    fun insertDisk(image: ByteArray, save: ((ByteArray) -> Unit)? = null) {
+        pendingDisk.set(PendingDisk(image, save))
+    }
+
+    private suspend fun handleCommand(command: Command) {
+        state.commands.update { it + 1 }
+        pendingDisk.getAndSet(null)?.let {
+            diskimage = it.image
+            saveDisk = it.save
+            diskChanged = true
+        }
+        if (command.toEnum() !in quietCommands) {
+            state.write("$command")
+        }
+
+        when (command.toEnum()) {
+            NowindCommand.DSKIO -> diskIo(command)
+            NowindCommand.DSKCHG -> if (knownDrive(command)) diskChange()
+            NowindCommand.GETDPB -> if (knownDrive(command)) getDpb(command)
+
+            NowindCommand.DRIVES -> {
+                driveOffset = command.a
+                responseQueue.addHeader()
+                responseQueue.add(0);  // 0 = no phantom drive, 2 = enable phantom drive(s)
+                val allowOtherDiskroms = 0x80; // 0 = disabled, 0x80 = initialize more disk roms
+                responseQueue.add(command.a or allowOtherDiskroms)
+                responseQueue.add(NUMBER_OF_DRIVES)
+            }
+
+            NowindCommand.INIENV -> {
+                responseQueue.addHeader()
+                responseQueue.add(255); // index of romdisk (255 = no romdisk)
+            }
+
+            NowindCommand.GETDATE -> {
+                val now = Calendar.getInstance()
+                responseQueue.addHeader()
+                responseQueue.add(now.get(Calendar.DAY_OF_MONTH))
+                responseQueue.add(now.get(Calendar.MONTH) + 1)
+                responseQueue.add16(now.get(Calendar.YEAR))
+            }
+
+            NowindCommand.DEVICEOPEN -> nowDevice.open(command, commandQueue.readBytes(11), responseQueue)
+            NowindCommand.DEVICECLOSE -> nowDevice.close(command.hl)
+            NowindCommand.DEVICEWRITE -> nowDevice.write(command)
+            NowindCommand.DEVICEREAD -> nowDevice.read(command, responseQueue)
+
+            // the MSX reads two replies: the first tells the host is there, the second brings the character.
+            // The C++ host waits for a key on its console; a phone has none, so the answer is end of file.
+            NowindCommand.AUXIN -> {
+                responseQueue.addHeader()
+                responseQueue.addHeader()
+                responseQueue.add(0x1A)
+            }
+
+            NowindCommand.AUXOUT -> collectLine(auxOut, command.a, "MSX AUX> ", setOf(0x0D, 0x0A))
+            NowindCommand.STDOUT -> collectLine(stdout, command.a, "MSX says> ", setOf(0x0D, 0x0A, 0, '$'.code))
+
+            // a zero terminated text follows, sent by the USB_DBMSG macro of the ROM
+            NowindCommand.MESSAGE -> {
+                val text = commandQueue.readUntil(setOf(0), 239).takeWhile { it != 0 }
+                state.write("MSX debug message: ${toText(text)}, registers: $command")
+            }
+
+            // CALL IMAGE("GAME.DSK") or nic.com; the name ends with 0 or ':'.
+            // A is not a drive number here (nic.com sends the image type), the host has one drive anyway.
+            NowindCommand.CHANGEIMAGE -> {
+                val name = commandQueue.readUntil(setOf(0, ':'.code), 40).takeWhile { it != 0 && it != ':'.code }
+                val fileName = stripQuotes(toText(name)).trim()
+                state.write("CHANGEIMAGE: '$fileName'")
+                if (fileName.isNotEmpty()) onChangeImage?.invoke(fileName)
+            }
+
+            NowindCommand.GETDOSVERSION -> {
+                val msxIdByte = command.a // MSX version number, 0=MSX1, 1=MSX2, 2=MSX2+, 3=MSX Turbo R
+
+                // send back header + "1" to enable DOS1 and "2" to enable DOS2
+                // some games, like Puyo Puyo, dont see to be compatible with the way
+                // the nowind ROM 'skips' the DOS2 initialization, so DOS2 is a setting that is off by default
+                responseQueue.addHeader()
+                responseQueue.add(dosVersionFor(msxIdByte, enableDos2))
+            }
+
+            // the MSX asks whether the host has a command waiting for it to execute,
+            // B = 0: at startup (C = 0 for the first request), B = 1: anytime
+            NowindCommand.CMDREQUEST -> {
+                val commandType = command.getB()
+                val commandArgument = command.getC()
+                Debug.log("- CMD REQUESTED: %X with argument %X".format(commandType, commandArgument))
+                if (commandType == 0 && commandArgument == 0) {
+                    // the MSX boots, files of the NOW: device that were left open will never be closed
+                    nowDevice.closeAll()
+                }
+                if (commandType == 0 || commandType == 1) {
+                    responseQueue.addHeader()
+                    responseQueue.add(0) // no more commands
+                } else {
+                    Debug.log("* unknown CMDREQUEST type $commandType, ignored")
+                }
+            }
+
+            // 11 bytes (IX, IY, SP, slot selection, $FCC5, $FCC7) and 34 bytes of the stack, which start with the PC
+            NowindCommand.CPUINFO -> {
+                val info = commandQueue.readBytes(45)
+                fun word(index: Int) = info[index] + 256 * info[index + 1]
+                state.write(
+                    "CPU info: PC:%04X AF:%04X BC:%04X DE:%04X HL:%04X IX:%04X IY:%04X SP:%04X, slots: %02X %04X %04X".format(
+                        word(11), command.a * 256 + command.f, command.bc, command.de, command.hl,
+                        word(0), word(2), (word(4) + 6) and 0xFFFF, info[6], word(7), word(9)
+                    )
+                )
+            }
+
+            NowindCommand.COMMAND -> apiCommand(command)
+
+            // the ROM handles CHOICE, DSKFMT and the random I/O and EOF of the NOW: device itself, and DSKIO does
+            // the block transfers; the MSX never sends these commands, so there is no defined reply
+            NowindCommand.CHOICE,
+            NowindCommand.DSKFMT,
+            NowindCommand.DEVICERNDIO,
+            NowindCommand.DEVICEEOF,
+            NowindCommand.BLOCKREAD,
+            NowindCommand.BLOCKWRITE -> Debug.log("* ${command.toEnum()} is handled by the MSX ROM, ignored, registers: $command")
+
+            null -> Debug.log("* unknown command: %X ignored".format(command.cmd))
+        }
     }
 
     // no response is legal and causes a 'Disk offline' on the MSX, like the C++ host does for an unknown drive
@@ -505,133 +729,36 @@ class FTDIClient(
         return if (position < diskimage.size) diskimage[position].toInt() and 0xFF else 0xF9
     }
 
-    private fun le16(offset: Int): Int = (diskimage[offset].toInt() and 0xFF) + 256 * (diskimage[offset + 1].toInt() and 0xFF)
-
-    // converts the boot sector (sector 0) into an MSX Disk Parameter Block, see GETDPB in protocol.md
-    private fun getDpb(command: Command) {
-        if (diskimage.size < 512) return
-        val bytesPerSector = le16(11)
-        val sectorsPerCluster = diskimage[13].toInt() and 0xFF
-        val firstFatSector = le16(14)
-        val fatCopies = diskimage[16].toInt() and 0xFF
-        val rootDirEntries = le16(17)
-        var numberOfSectors = le16(19)
-        val mediaType = diskimage[21].toInt() and 0xFF
-        val sectorsPerFat = le16(22)
-        if (numberOfSectors == 0) {
-            numberOfSectors = le16(32) + 65536 * le16(34)
+    private fun collectLine(buffer: StringBuilder, character: Int, prefix: String, lineEnds: Set<Int>) {
+        if (character in lineEnds) {
+            if (buffer.isNotEmpty()) {
+                state.write("$prefix$buffer")
+                buffer.clear()
+            }
+        } else if (buffer.length < 256) {
+            buffer.append(character.toChar())
         }
-        if (bytesPerSector < 32 || sectorsPerCluster == 0) {
-            Debug.log("GETDPB: invalid boot sector, ignored")
+    }
+
+    private fun toText(bytes: List<Int>): String = bytes.map { it.toChar() }.joinToString("")
+
+    // the extended BIOS API (EXTBIO): C = API, A = 4 (the EXTBIO function), B = length of the arguments that follow,
+    // DE = MSX address for the zero terminated result text
+    private suspend fun apiCommand(command: Command) {
+        val api = command.getC()
+        val length = command.getB()
+        if (api != API_NOWMAP) {
+            Debug.log("* unknown API command $api, ignored, registers: $command")
             return
         }
-
-        val firstDirSector = (firstFatSector + fatCopies * sectorsPerFat) and 0xFFFF
-        val directorySizeInSectors = (rootDirEntries * 32 + bytesPerSector - 1) / bytesPerSector
-        val firstRecordSector = (firstDirSector + directorySizeInSectors) and 0xFFFF
-        val maxClusters = (((numberOfSectors - firstRecordSector) / sectorsPerCluster) + 1) and 0xFFFF
-
-        val dirMask = (bytesPerSector / 32) - 1
-        var dirShift = 0
-        while (dirMask and (1 shl dirShift) != 0) dirShift++
-        val clusMask = sectorsPerCluster - 1
-        var clusShift = 0
-        while (clusMask and (1 shl clusShift) != 0) clusShift++
-
-        responseQueue.addHeader()
-        responseQueue.add(command.getE())
-        responseQueue.add(command.getD())
-        responseQueue.add(mediaType)                    // 1 ID
-        responseQueue.add16(bytesPerSector)             // 2-3 SECSIZ
-        responseQueue.add(dirMask and 0xFF)             // 4 DIRMSK
-        responseQueue.add(dirShift)                     // 5 DIRSHFT
-        responseQueue.add(clusMask and 0xFF)            // 6 CLUSMSK
-        responseQueue.add(clusShift + 1)                // 7 CLUSSHFT
-        responseQueue.add16(firstFatSector)             // 8-9 FIRFAT
-        responseQueue.add(fatCopies)                    // 10 FATCNT
-        responseQueue.add(rootDirEntries and 0xFF)      // 11 MAXENT
-        responseQueue.add16(firstRecordSector)          // 12-13 FIRREC
-        responseQueue.add16(maxClusters)                // 14-15 MAXCLUS
-        responseQueue.add(sectorsPerFat and 0xFF)       // 16 FATSIZ
-        responseQueue.add16(firstDirSector)             // 17-18 FIRDIR
-    }
-
-    // the new image is used from the next command on, the MSX sees it as a disk change.
-    // Without save the disk is write protected.
-    fun insertDisk(image: ByteArray, save: ((ByteArray) -> Unit)? = null) {
-        pendingDisk.set(PendingDisk(image, save))
-    }
-
-    private suspend fun handleCommand(command: Command) {
-        state.commands.update { it + 1 }
-        pendingDisk.getAndSet(null)?.let {
-            diskimage = it.image
-            saveDisk = it.save
-            diskChanged = true
+        if (command.a != 4 || length == 0) {
+            Debug.log("* API_NOWMAP with EXTBIO function ${command.a} and $length bytes of arguments, ignored")
+            return
         }
-        if (command.toEnum() != NowindCommand.DSKIO) {
-            state.write("$command")
-        }
-
-        when (command.toEnum()) {
-            NowindCommand.DSKIO -> diskIo(command)
-            NowindCommand.DSKCHG -> if (knownDrive(command)) diskChange()
-            NowindCommand.GETDPB -> if (knownDrive(command)) getDpb(command)
-            NowindCommand.CHOICE -> notImplemented(command)
-            NowindCommand.DSKFMT -> notImplemented(command)
-            NowindCommand.DRIVES -> {
-                responseQueue.addHeader()
-                responseQueue.add(0);  // 0 = no phantom drive, 2 = enable phantom drive(s)
-                val allowOtherDiskroms = 0x80; // 0 = disabled, 0x80 = initialize more disk roms
-                responseQueue.add(command.a or allowOtherDiskroms)
-                responseQueue.add(NUMBER_OF_DRIVES)
-            }
-
-            NowindCommand.INIENV -> {
-                responseQueue.addHeader()
-                responseQueue.add(255); // index of romdisk (255 = no romdisk)
-            }
-
-            NowindCommand.GETDATE -> notImplemented(command)
-            NowindCommand.DEVICEOPEN -> nowDevice.open(command, commandQueue.readBytes(11), responseQueue)
-            NowindCommand.DEVICECLOSE -> nowDevice.close(command.hl)
-            NowindCommand.DEVICERNDIO -> notImplemented(command)
-            NowindCommand.DEVICEWRITE -> nowDevice.write(command)
-            NowindCommand.DEVICEREAD -> nowDevice.read(command, responseQueue)
-            NowindCommand.DEVICEEOF -> notImplemented(command)
-            NowindCommand.AUXIN -> notImplemented(command)
-            NowindCommand.AUXOUT -> notImplemented(command)
-            NowindCommand.MESSAGE -> notImplemented(command)
-            NowindCommand.CHANGEIMAGE -> notImplemented(command)
-            NowindCommand.GETDOSVERSION -> {
-                val msxIdByte = command.a // MSX version number, 0=MSX1, 1=MSX2, 2=MSX2+, 3=MSX Turbo R
-
-                // send back header + "1" to enable DOS1 and "2" to enable DOS2
-                // some games, like Puyo Puyo, dont see to be compatible with the way
-                // the nowind ROM 'skips' the DOS2 initialization, so DOS2 is a setting that is off by default
-                responseQueue.addHeader()
-                responseQueue.add(dosVersionFor(msxIdByte, enableDos2))
-            }
-
-            // the MSX asks whether the host has a command waiting for it to execute
-            NowindCommand.CMDREQUEST -> {
-                val commandId = command.getB()
-                val commandArgument = command.getC()
-                Debug.log("- CMD REQUESTED: %X with argument %X".format(commandId, commandArgument))
-
-                responseQueue.addHeader()
-                responseQueue.add(0) // no more commands / not implemented
-            }
-
-            NowindCommand.BLOCKREAD -> notImplemented(command)
-            NowindCommand.BLOCKWRITE -> notImplemented(command)
-            NowindCommand.CPUINFO -> notImplemented(command)
-            NowindCommand.COMMAND -> notImplemented(command)
-            NowindCommand.STDOUT -> notImplemented(command)
-            null -> Debug.log("* unknown command: %X ignored".format(command.cmd))
-        }
-
-
+        val arguments = toText(commandQueue.readBytes(length).takeWhile { it != 0 })
+        val result = nowMap(arguments, driveOffset, state.hostedDisk.value)
+        Debug.log("nowmap '$arguments': $result")
+        ReadOperation(command.de, result.map { it.code and 0xFF } + 0).execute(responseQueue, commandQueue)
     }
 
     // hosting runs on its own thread; host() is a blocking runBlocking loop that busy-polls the FTDI device

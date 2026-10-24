@@ -33,6 +33,7 @@ class NowindApp : Application() {
         client = FTDIClient(this, state)
         library = DiskLibrary(storage, appScope, client, state, settings)
         client.deviceFiles = StorageDeviceFiles(this, storage)
+        client.onChangeImage = { name -> library.hostByMsxName(name) }
         firmware = FirmwareUpdater(this, appScope, client, settings, storage)
 
         appScope.launch {
