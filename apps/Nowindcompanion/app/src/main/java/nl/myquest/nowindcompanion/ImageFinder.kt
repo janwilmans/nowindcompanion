@@ -20,12 +20,34 @@ fun parseImageRequest(text: String): ImageRequest {
 // a Knightmare with a 2 in it). The shortest name comes first: hacks and translations add to the name of the
 // original ('Knightmare' does not end up at a Bullet Hell Hack), then alphabetical.
 fun <T> bestMatch(items: List<T>, query: String, name: (T) -> String): T? {
-    val keywords = query.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-    if (keywords.isEmpty()) return null
+    val matches = imageMatcher(query) ?: return null
     return items
-        .filter { item -> keywords.all { name(item).contains(it, ignoreCase = true) } }
+        .filter { matches(name(it)) }
         .sortedWith(compareBy<T> { name(it).length }.thenBy { name(it).lowercase() })
         .firstOrNull()
+}
+
+// 'KNIGHTMARE KONAMI': the words in any order; 'KNIGHTMARE,KONAMI': the comma separated keys in that order,
+// a key may contain spaces ('ALESTE 2,JA'). Null when there is nothing to look for.
+fun imageMatcher(query: String): ((String) -> Boolean)? {
+    if (',' in query) {
+        val keys = query.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        if (keys.isEmpty()) return null
+        return { name -> inOrder(name, keys) }
+    }
+    val keywords = query.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+    if (keywords.isEmpty()) return null
+    return { name -> keywords.all { name.contains(it, ignoreCase = true) } }
+}
+
+private fun inOrder(name: String, keys: List<String>): Boolean {
+    var from = 0
+    for (key in keys) {
+        val at = name.indexOf(key, from, ignoreCase = true)
+        if (at < 0) return false
+        from = at + key.length
+    }
+    return true
 }
 
 // the disk image or ROM of the archive listings to host; ROMs that can not be started are skipped

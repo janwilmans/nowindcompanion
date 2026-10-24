@@ -39,6 +39,17 @@ class ImageFinderTest {
     }
 
     @Test
+    fun comma_separated_keys_must_be_found_in_that_order() {
+        // the shortest name with both, but Twinbee comes before Knightmare in it
+        assertEquals("AutoDemo & Cheat Twinbee & Knightmare", findInArchive(archive, "TWINBEE,KNIGHTMARE")?.name)
+        assertNull(findInArchive(archive, "KNIGHTMARE,TWINBEE"))
+        // a key may contain spaces, and a key is looked for after the previous one ends
+        assertEquals("Knightmare. Majyo Densetsu (1986)(Konami)", findInArchive(archive, "MAJYO DENSETSU,KONAMI")?.name)
+        assertNull(findInArchive(archive, "KONAMI,MAJYO"))
+        assertNull(findInArchive(archive, " , "))
+    }
+
+    @Test
     fun plus_2_enables_dos2_and_plus_1_turns_it_off() {
         assertEquals(ImageRequest("KNIGHTMARE", true), parseImageRequest("KNIGHTMARE+2"))
         assertEquals(ImageRequest("ALESTE 2", false), parseImageRequest(" ALESTE 2 + 1 "))
