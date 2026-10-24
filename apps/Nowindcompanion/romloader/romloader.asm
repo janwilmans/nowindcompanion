@@ -4,7 +4,8 @@
 ;   10 CLEAR 200,&HC400:BLOAD"LOADER.BIN",R
 ; GAME.ROM is a 32 KB image of pages 1 and 2 ($4000-$BFFF); the app already placed and mirrored the ROM in it.
 ; The loader copies it to the RAM of pages 1 and 2 and calls the INIT address of the ROM header,
-; the way the BIOS starts a cartridge.
+; the way the BIOS starts a cartridge: stack at $F380 and all hooks RET, as if no disk ROM was there.
+; The header is removed first, otherwise a reset starts the RAM copy (half overwritten by then) in a loop.
 ;
 ; assemble with nowindlibraries/Release/sjasm.exe, see make.bat
 
@@ -13,6 +14,10 @@ CHPUT       equ $00A2
 BDOS        equ $F37D               ; Disk BASIC entry for the BDOS functions
 RAMAD1      equ $F342               ; slot of the RAM in page 1, set by the disk ROM
 EXPTBL      equ $FCC1               ; slot of the main ROM
+HOOKS       equ $FD9A               ; H.KEYI, the first hook
+HOOKS_END   equ $FFCA               ; EXTBIO, the first byte after the hooks
+H_STKE      equ $FEDA
+STACK       equ $F380               ; where the stack is while the BIOS starts the cartridges
 
 F_OPEN      equ $0F
 F_SETDMA    equ $1A
@@ -86,9 +91,27 @@ start:
         jp fail
 
 .init:
+        ; start the ROM the way the BIOS starts a cartridge, before any disk ROM is set up
+        di
+        ld sp,STACK
+        push hl                     ; INIT
+        ; a reset keeps the RAM, the BIOS would find this header and start the copy left behind
+        xor a
+        ld ($4000),a
+        ld ($8000),a
+        ; the disk ROM hooks run in the work area that games use for their own variables
+        ld hl,HOOKS
+        ld de,HOOKS+1
+        ld bc,HOOKS_END-HOOKS-1
+        ld (hl),$C9                 ; RET
+        ldir
+        pop hl
         ei
         call jumpHL
-        ; the ROM returned from INIT, nothing else to start
+        ; the ROM returned from INIT, it may have set H.STKE to start after the other cartridges
+        ld a,(H_STKE)
+        cp $C9
+        jp nz,H_STKE
 stop:
         ei
         halt
