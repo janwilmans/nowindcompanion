@@ -67,12 +67,15 @@ start:
         call read16k
 
         call ramPage1
-        ld hl,($4000)
         ld de,$4241                 ; "AB"
+        ld hl,($4000)
         or a
         sbc hl,de
         ld hl,($4002)
         jr z,.header
+        ; only in page 2: a ROM for $8000-$BFFF, it gets the BASIC ROM in page 1 like on a real MSX
+        ld a,1
+        ld (page2Only),a
         ld hl,($8000)
         or a
         sbc hl,de
@@ -105,6 +108,9 @@ start:
         ld bc,HOOKS_END-HOOKS-1
         ld (hl),$C9                 ; RET
         ldir
+        ld a,(page2Only)
+        or a
+        call nz,romPage1
         pop hl
         ei
         call jumpHL
@@ -153,6 +159,9 @@ romPage1:
         ld a,(EXPTBL)
         ld h,$40
         jp ENASLT
+
+page2Only:
+        db 0
 
 fcb:
         db 0                        ; the default drive

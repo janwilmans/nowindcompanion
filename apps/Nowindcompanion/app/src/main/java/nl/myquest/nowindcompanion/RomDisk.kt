@@ -14,7 +14,10 @@ class UnsupportedRomException(message: String) : IOException(message)
 private fun hasHeader(rom: ByteArray, offset: Int) =
     rom.size >= offset + 2 && rom[offset] == 'A'.code.toByte() && rom[offset + 1] == 'B'.code.toByte()
 
-// the ROM as it is seen in pages 1 and 2 of a cartridge slot: smaller ROMs are mirrored like on a cartridge
+// The ROM as it is seen in pages 1 and 2 of a cartridge slot, placed by its INIT address.
+// A ROM of up to 16 KB that starts in page 2 only fills page 2: page 1 stays empty, the loader then puts
+// the BASIC ROM back in page 1, like on a real MSX (such ROMs call BASIC routines there).
+// Otherwise smaller ROMs are mirrored like on a cartridge.
 fun romImage(rom: ByteArray): ByteArray {
     if (rom.size > ROM_IMAGE_SIZE) {
         throw UnsupportedRomException("MegaROMs and ROMs over 32 KB can not be started yet")
@@ -25,11 +28,19 @@ fun romImage(rom: ByteArray): ByteArray {
         }
         throw UnsupportedRomException("no ROM header found, this is not an MSX ROM")
     }
+    val init = (rom[2].toInt() and 0xFF) or (rom[3].toInt() and 0xFF shl 8)
+    if (init == 0) throw UnsupportedRomException("BASIC programs in ROM can not be started yet")
+    if (init !in 0x4000..0xBFFF) {
+        throw UnsupportedRomException("this ROM starts at $%04X, outside \$4000-\$BFFF, that can not be started yet".format(init))
+    }
     val image = ByteArray(ROM_IMAGE_SIZE) { 0xFF.toByte() }
-    if (ROM_IMAGE_SIZE % rom.size == 0) {
-        for (offset in 0 until ROM_IMAGE_SIZE step rom.size) rom.copyInto(image, offset)
+    val page2Only = init >= 0x8000 && rom.size <= PAGE
+    val start = if (page2Only) PAGE else 0
+    val area = ROM_IMAGE_SIZE - start
+    if (area % rom.size == 0) {
+        for (offset in start until ROM_IMAGE_SIZE step rom.size) rom.copyInto(image, offset)
     } else {
-        rom.copyInto(image)
+        rom.copyInto(image, start)
     }
     return image
 }

@@ -51,9 +51,11 @@ private class Fat12Reader(private val disk: ByteArray) {
 }
 
 class RomDiskTest {
-    private fun rom(size: Int, headerAt: Int = 0) = ByteArray(size) { (it % 251).toByte() }.apply {
-        this[headerAt] = 'A'.code.toByte()
-        this[headerAt + 1] = 'B'.code.toByte()
+    private fun rom(size: Int, init: Int = 0x4010) = ByteArray(size) { (it % 251).toByte() }.apply {
+        this[0] = 'A'.code.toByte()
+        this[1] = 'B'.code.toByte()
+        this[2] = init.toByte()
+        this[3] = (init shr 8).toByte()
     }
 
     @Test
@@ -72,6 +74,31 @@ class RomDiskTest {
         val rom8 = rom(8 * 1024)
         val image8 = romImage(rom8)
         for (copy in 0 until 4) assertArrayEquals(rom8, image8.copyOfRange(copy * 8192, (copy + 1) * 8192))
+    }
+
+    @Test
+    fun a_rom_that_starts_in_page_2_only_fills_page_2() {
+        // like Sweet Acorn: 16 KB, INIT $8010; page 1 must stay free for the BASIC ROM
+        val rom = rom(16 * 1024, init = 0x8010)
+        val image = romImage(rom)
+        assertTrue(image.copyOfRange(0, 16 * 1024).all { it == 0xFF.toByte() })
+        assertArrayEquals(rom, image.copyOfRange(16 * 1024, 32 * 1024))
+
+        val rom8 = rom(8 * 1024, init = 0x8010)
+        val image8 = romImage(rom8)
+        assertArrayEquals(rom8, image8.copyOfRange(16 * 1024, 24 * 1024))
+        assertArrayEquals(rom8, image8.copyOfRange(24 * 1024, 32 * 1024))
+    }
+
+    @Test(expected = UnsupportedRomException::class)
+    fun a_rom_that_starts_in_page_0_is_refused() {
+        // like Beamrider: a mirrored cartridge with INIT $0004
+        romImage(rom(16 * 1024, init = 0x0004))
+    }
+
+    @Test(expected = UnsupportedRomException::class)
+    fun a_basic_rom_is_refused() {
+        romImage(rom(16 * 1024, init = 0))
     }
 
     @Test(expected = UnsupportedRomException::class)
