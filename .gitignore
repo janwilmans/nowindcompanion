@@ -1,3 +1,7 @@
 apps/nowindcompanion/.idea
 # disk images for local testing
 disks/
+
+# Python bytecode, regenerated when a script runs
+__pycache__/
+*.pyc
