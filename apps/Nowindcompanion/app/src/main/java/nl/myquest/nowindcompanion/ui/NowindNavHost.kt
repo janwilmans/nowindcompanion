@@ -86,6 +86,7 @@ fun NowindNavHost(app: NowindApp) {
                 app.library, settings.allSources.filter { it.enabled }, hostedDisk,
                 skipDisk = skipDisk,
                 onSkipDisk = { app.state.skipDisk.value = it },
+                commands = commands,
                 onBack = back,
             )
         }

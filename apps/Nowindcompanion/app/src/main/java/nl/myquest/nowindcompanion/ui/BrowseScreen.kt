@@ -89,6 +89,7 @@ fun BrowseScreen(
     hostedDisk: String?,
     skipDisk: SkipDisk,
     onSkipDisk: (SkipDisk) -> Unit,
+    commands: Long,                 // blinks the activity light when the MSX reads or writes
     onBack: () -> Unit,
 ) {
     val viewModel: BrowseViewModel = viewModel()
@@ -132,6 +133,7 @@ fun BrowseScreen(
         "Browse",
         onBack,
         actions = {
+            ActivityLight(commands, Modifier.padding(horizontal = 12.dp), size = 10.dp)
             if (skipDisk == SkipDisk.Off) {
                 IconButton(onClick = toggleSkipDisk) {
                     Icon(Icons.Rounded.Eject, contentDescription = "Boot without disk")
