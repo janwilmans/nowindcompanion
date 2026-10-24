@@ -18,6 +18,9 @@ import kotlin.concurrent.thread
 
 const val HARDCODED_READ_DATABLOCK_SIZE = 128
 
+// the host serves one disk, drive A: of the Nowind interface
+const val NUMBER_OF_DRIVES = 1
+
 // install https://plugins.jetbrains.com/plugin/7017-plantuml-integration
 // to view
 /*
@@ -418,6 +421,22 @@ class FTDIClient(
         Debug.log("* command not implemented: ${command.toEnum()} (0x%02X), ignored, registers: $command".format(command.cmd))
     }
 
+    // no response is legal and causes a 'Disk offline' on the MSX, like the C++ host does for an unknown drive
+    private fun knownDrive(command: Command): Boolean {
+        if (command.a < NUMBER_OF_DRIVES) return true
+        Debug.log("${command.toEnum()} for drive ${command.a}, which does not exist, ignored")
+        return false
+    }
+
+    // the first byte of the FAT. The FAT follows the reserved sectors (boot sector offset 14), that is sector 1 on
+    // nearly every disk; old MSX-DOS1 disks have no valid boot sector, their FAT is at sector 1 as well
+    private fun mediaDescriptor(): Int {
+        val validBootSector = diskimage.size >= 512 && le16(11) == 512
+        val reservedSectors = if (validBootSector) le16(14) else 1
+        val position = reservedSectors.coerceIn(1, 64) * 512
+        return if (position < diskimage.size) diskimage[position].toInt() and 0xFF else 0xF9
+    }
+
     private fun le16(offset: Int): Int = (diskimage[offset].toInt() and 0xFF) + 256 * (diskimage[offset + 1].toInt() and 0xFF)
 
     // converts the boot sector (sector 0) into an MSX Disk Parameter Block, see GETDPB in protocol.md
@@ -486,6 +505,7 @@ class FTDIClient(
 
         when (command.toEnum()) {
             NowindCommand.DSKIO -> {
+                if (!knownDrive(command)) return
 
                 //io_beep();
 
@@ -521,7 +541,7 @@ class FTDIClient(
                 Debug.log("  DSKIO read done in ${elapsed / 1_000_000} ms, ${formatSpeed(size / 1024.0 / (elapsed / 1e9))}")
             }
 
-            NowindCommand.DSKCHG -> {
+            NowindCommand.DSKCHG -> if (knownDrive(command)) {
                 //responseQueue.addHeader()
                 //responseQueue.add(1)    // Say nothing changed (incomplete implementation)
                 //responseQueue.add(255)  // Dummy
@@ -530,7 +550,7 @@ class FTDIClient(
                 if (diskChanged) {
                     diskChanged = false
                     responseQueue.add(255) // changed
-                    val mediaDescriptor = readDisk(diskimage, 1, 1)[0]
+                    val mediaDescriptor = mediaDescriptor()
                     Debug.log("DSKCHG returns mediaDescriptor ${mediaDescriptor}")
                     responseQueue.add(mediaDescriptor) // return media descriptor
                 } else {
@@ -539,7 +559,7 @@ class FTDIClient(
                 }
             }
 
-            NowindCommand.GETDPB -> getDpb(command)
+            NowindCommand.GETDPB -> if (knownDrive(command)) getDpb(command)
             NowindCommand.CHOICE -> notImplemented(command)
             NowindCommand.DSKFMT -> notImplemented(command)
             NowindCommand.DRIVES -> {
@@ -547,8 +567,7 @@ class FTDIClient(
                 responseQueue.add(0);  // 0 = no phantom drive, 2 = enable phantom drive(s)
                 val allowOtherDiskroms = 0x80; // 0 = disabled, 0x80 = initialize more disk roms
                 responseQueue.add(command.a or allowOtherDiskroms)
-                val numberOfDrives = 1
-                responseQueue.add(numberOfDrives)
+                responseQueue.add(NUMBER_OF_DRIVES)
             }
 
             NowindCommand.INIENV -> {
