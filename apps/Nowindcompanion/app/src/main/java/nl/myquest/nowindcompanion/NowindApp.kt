@@ -33,8 +33,18 @@ class NowindApp : Application() {
         client = FTDIClient(this, state)
         library = DiskLibrary(storage, appScope, client, state, settings) { assets.open("romloader.bin").use { it.readBytes() } }
         client.deviceFiles = StorageDeviceFiles(this, storage)
-        client.onChangeImage = { name ->
-            appScope.launch { library.hostByKeyword(name, settings.settings.first().allSources.filter { it.enabled }) }
+        // _IMAGE("<keyword>"), '+2' / '+1' at the end turns DOS2 on / off, from the next boot of the MSX
+        client.onChangeImage = { text ->
+            val request = parseImageRequest(text)
+            appScope.launch {
+                request.enableDos2?.let { enable ->
+                    settings.setEnableDos2(enable)
+                    state.write("CHANGEIMAGE: DOS2 ${if (enable) "on" else "off"} from the next boot")
+                }
+                if (request.name.isNotBlank()) {
+                    library.hostByKeyword(request.name, settings.settings.first().allSources.filter { it.enabled })
+                }
+            }
         }
         firmware = FirmwareUpdater(this, appScope, client, settings, storage)
 

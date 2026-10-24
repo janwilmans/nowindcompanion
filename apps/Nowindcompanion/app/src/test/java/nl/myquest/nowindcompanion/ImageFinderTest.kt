@@ -24,17 +24,27 @@ class ImageFinderTest {
     }
 
     @Test
-    fun names_that_start_with_the_keyword_and_are_shortest_come_first() {
-        // the original release; 'AutoDemo & Cheat Twinbee & Knightmare' has the keyword too, but not at the start
-        assertEquals("Knightmare. Majyo Densetsu (1986)(Konami)", findInArchive(archive, "KNIGHTMARE")?.name)
-        assertEquals("Knightmare - Majyo Densetsu (1986) Konami [9832]", findInArchive(archive, "KNIGHTMARE KONAMI [9832]")?.name)
+    fun the_keyword_may_be_anywhere_and_the_shortest_name_comes_first() {
+        // 'AutoDemo & Cheat Twinbee & Knightmare' is shorter than the original release
+        assertEquals("AutoDemo & Cheat Twinbee & Knightmare", findInArchive(archive, "KNIGHTMARE")?.name)
+        assertEquals("Knightmare. Majyo Densetsu (1986)(Konami)", findInArchive(archive, "MAJYO")?.name)
+        assertEquals("Knightmare - Majyo Densetsu (1986) Konami [9832]", findInArchive(archive, "KONAMI [9832]")?.name)
     }
 
     @Test
     fun megaroms_are_skipped() {
         // the shortest name, but at 128 KB the loader can not start it
-        val withMegaRom = archive + rom("Knightmare", 131072)
-        assertEquals("Knightmare. Majyo Densetsu (1986)(Konami)", findInArchive(withMegaRom, "KNIGHTMARE")?.name)
+        val withMegaRom = archive + rom("Majyo", 131072)
+        assertEquals("Knightmare. Majyo Densetsu (1986)(Konami)", findInArchive(withMegaRom, "MAJYO")?.name)
+    }
+
+    @Test
+    fun plus_2_enables_dos2_and_plus_1_turns_it_off() {
+        assertEquals(ImageRequest("KNIGHTMARE", true), parseImageRequest("KNIGHTMARE+2"))
+        assertEquals(ImageRequest("ALESTE 2", false), parseImageRequest(" ALESTE 2 + 1 "))
+        assertEquals(ImageRequest("ALESTE 2", null), parseImageRequest("ALESTE 2"))
+        assertEquals(ImageRequest("", true), parseImageRequest("+2"))
+        assertEquals(ImageRequest("GAME.DSK", true), parseImageRequest("GAME.DSK+2"))
     }
 
     @Test

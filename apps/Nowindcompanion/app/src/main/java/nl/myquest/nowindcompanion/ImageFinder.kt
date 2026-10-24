@@ -6,20 +6,25 @@ package nl.myquest.nowindcompanion
 fun imageKeyword(name: String): String =
     name.trim().replace(Regex("""\.(dsk|rom|zip)$""", RegexOption.IGNORE_CASE), "")
 
-// One result, so unlike the Browse search every keyword must be in the name ('GRADIUS 2' must not find a
-// Knightmare with a 2 in it). Names that start with what was typed come first, then the shortest names: hacks and
-// translations add to the name of the original ('Knightmare' finds Majyo Densetsu, not a Bullet Hell Hack).
+// what _IMAGE asks for: the name or keywords, and '<name>+2' to enable DOS2 or '<name>+1' to turn it off
+data class ImageRequest(val name: String, val enableDos2: Boolean?)
+
+private val DOS_SUFFIX = Regex("""\s*\+\s*([12])\s*$""")
+
+fun parseImageRequest(text: String): ImageRequest {
+    val suffix = DOS_SUFFIX.find(text) ?: return ImageRequest(text.trim(), null)
+    return ImageRequest(text.substring(0, suffix.range.first).trim(), suffix.groupValues[1] == "2")
+}
+
+// One result, so unlike the Browse search every keyword must be in the name, anywhere ('GRADIUS 2' must not find
+// a Knightmare with a 2 in it). The shortest name comes first: hacks and translations add to the name of the
+// original ('Knightmare' does not end up at a Bullet Hell Hack), then alphabetical.
 fun <T> bestMatch(items: List<T>, query: String, name: (T) -> String): T? {
     val keywords = query.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
     if (keywords.isEmpty()) return null
-    val typed = keywords.joinToString(" ")
     return items
         .filter { item -> keywords.all { name(item).contains(it, ignoreCase = true) } }
-        .sortedWith(
-            compareBy<T> { !name(it).startsWith(typed, ignoreCase = true) }
-                .thenBy { name(it).length }
-                .thenBy { name(it).lowercase() }
-        )
+        .sortedWith(compareBy<T> { name(it).length }.thenBy { name(it).lowercase() })
         .firstOrNull()
 }
 
