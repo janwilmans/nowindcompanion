@@ -69,6 +69,7 @@ import nl.myquest.nowindcompanion.DiskSource
 import nl.myquest.nowindcompanion.MsxFilter
 import nl.myquest.nowindcompanion.SourceKind
 import nl.myquest.nowindcompanion.formatSize
+import nl.myquest.nowindcompanion.searchEntries
 import nl.myquest.nowindcompanion.DownloadProgress
 import nl.myquest.nowindcompanion.DownloadRequest
 import nl.myquest.nowindcompanion.RemoteEntry
@@ -223,8 +224,7 @@ private fun ArchiveTab(
             is ListingState.Loaded -> {
                 val downloaded = files.map { it.name }.toSet()
                 val queued = pending.map { it.entry.url }.toSet()
-                val entries = if (filter.isBlank()) listing.entries
-                else listing.entries.filter { it.name.contains(filter.trim(), ignoreCase = true) }
+                val entries = remember(listing.entries, filter) { searchEntries(listing.entries, filter) }
                 if (entries.isEmpty()) {
                     CenteredBox { Text("Nothing here", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 } else {
