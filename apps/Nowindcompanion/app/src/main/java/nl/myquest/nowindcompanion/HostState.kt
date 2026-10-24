@@ -11,6 +11,16 @@ enum class ConnectionState(val label: String) {
     Hosting("Connected"),
 }
 
+// 'boot without disk': the MSX gets no disk for one boot, the boot after that finds it again
+enum class SkipDisk {
+    Off,
+    NextBoot,   // armed, the next boot gets no disk
+    ThisBoot,   // the MSX booted without disk, until the next boot
+}
+
+// what a boot of the MSX does with it: an armed skip takes effect, anything else ends
+fun SkipDisk.atBoot(): SkipDisk = if (this == SkipDisk.NextBoot) SkipDisk.ThisBoot else SkipDisk.Off
+
 // state shared between the FTDIClient I/O thread and the UI, owned by NowindApp so it outlives the activity
 class HostState {
     val messages = MutableStateFlow(MessageList())
@@ -22,6 +32,7 @@ class HostState {
     val recentReads = RecentTransfers()
     // counts the commands received from the MSX, the activity light blinks when it changes
     val commands = MutableStateFlow(0L)
+    val skipDisk = MutableStateFlow(SkipDisk.Off)
 
     fun resetStats() {
         readStats.value = TransferStats()

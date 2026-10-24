@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Eject
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -57,6 +58,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,10 +78,19 @@ import nl.myquest.nowindcompanion.searchEntries
 import nl.myquest.nowindcompanion.DownloadProgress
 import nl.myquest.nowindcompanion.DownloadRequest
 import nl.myquest.nowindcompanion.RemoteEntry
+import nl.myquest.nowindcompanion.SkipDisk
+import kotlinx.coroutines.launch
 import nl.myquest.nowindcompanion.LibraryFile
 
 @Composable
-fun BrowseScreen(library: DiskLibrary, sources: List<DiskSource>, hostedDisk: String?, onBack: () -> Unit) {
+fun BrowseScreen(
+    library: DiskLibrary,
+    sources: List<DiskSource>,
+    hostedDisk: String?,
+    skipDisk: SkipDisk,
+    onSkipDisk: (SkipDisk) -> Unit,
+    onBack: () -> Unit,
+) {
     val viewModel: BrowseViewModel = viewModel()
     val source by viewModel.source.collectAsState()
     val msxFilter by viewModel.msxFilter.collectAsState()
@@ -91,6 +102,7 @@ fun BrowseScreen(library: DiskLibrary, sources: List<DiskSource>, hostedDisk: St
     val files by library.files.collectAsState()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(library) {
         library.events.collect { snackbar.showSnackbar(it) }
@@ -101,11 +113,54 @@ fun BrowseScreen(library: DiskLibrary, sources: List<DiskSource>, hostedDisk: St
     // the back button first walks up the folders that were opened
     BackHandler(enabled = tab == 0 && stack.size > 1) { viewModel.up() }
 
-    ScreenScaffold("Browse", onBack, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+    // the next boot gets no disk; pressed again it cancels that, or brings the disk back right away
+    val toggleSkipDisk = {
+        val (next, message) = when (skipDisk) {
+            SkipDisk.Off -> SkipDisk.NextBoot to "The next boot starts without disk, reset the MSX"
+            SkipDisk.NextBoot -> SkipDisk.Off to "Boot without disk cancelled"
+            SkipDisk.ThisBoot -> SkipDisk.Off to "The disk is back"
+        }
+        onSkipDisk(next)
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            snackbar.showSnackbar(message)
+        }
+        Unit
+    }
+
+    ScreenScaffold(
+        "Browse",
+        onBack,
+        actions = {
+            if (skipDisk == SkipDisk.Off) {
+                IconButton(onClick = toggleSkipDisk) {
+                    Icon(Icons.Rounded.Eject, contentDescription = "Boot without disk")
+                }
+            } else {
+                FilledTonalIconButton(onClick = toggleSkipDisk) {
+                    Icon(
+                        Icons.Rounded.Eject,
+                        contentDescription = if (skipDisk == SkipDisk.NextBoot) "Cancel boot without disk" else "Bring the disk back"
+                    )
+                }
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbar) }
+    ) { padding ->
         Column(Modifier.padding(padding)) {
             TabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Archive") })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Library (${files.size})") })
+            }
+            if (skipDisk != SkipDisk.Off) {
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        if (skipDisk == SkipDisk.NextBoot) "The next boot starts without disk"
+                        else "Booted without disk, the next boot finds the disk again",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
             }
             Box(Modifier.weight(1f)) {
                 when (tab) {

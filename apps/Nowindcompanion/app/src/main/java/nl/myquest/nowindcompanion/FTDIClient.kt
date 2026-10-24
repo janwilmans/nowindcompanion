@@ -8,6 +8,7 @@ import com.ftdi.j2xx.FT_Device
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -100,6 +101,7 @@ class FTDIClient(
 
     private var diskimage: ByteArray = ByteArray(1024 * 1024)
     private var diskChanged = true
+    private var diskWasAbsent = false
 
     // receives a copy of the disk after a DSKIO write; null when the disk can not be saved, it is then write protected
     private var saveDisk: ((ByteArray) -> Unit)? = null
@@ -544,8 +546,8 @@ class FTDIClient(
 
         when (command.toEnum()) {
             NowindCommand.DSKIO -> diskIo(command)
-            NowindCommand.DSKCHG -> if (knownDrive(command)) diskChange()
-            NowindCommand.GETDPB -> if (knownDrive(command)) getDpb(command)
+            NowindCommand.DSKCHG -> if (knownDrive(command) && diskPresent(command)) diskChange()
+            NowindCommand.GETDPB -> if (knownDrive(command) && diskPresent(command)) getDpb(command)
 
             NowindCommand.DRIVES -> {
                 driveOffset = command.a
@@ -619,6 +621,7 @@ class FTDIClient(
                 if (commandType == 0 && commandArgument == 0) {
                     // the MSX boots, files of the NOW: device that were left open will never be closed
                     nowDevice.closeAll()
+                    nextBoot()
                 }
                 if (commandType == 0 || commandType == 1) {
                     responseQueue.addHeader()
@@ -662,8 +665,29 @@ class FTDIClient(
         return false
     }
 
+    // 'boot without disk' takes effect at a boot and lasts until the next one
+    private fun nextBoot() {
+        val skip = state.skipDisk.updateAndGet { it.atBoot() }
+        if (skip == SkipDisk.ThisBoot) state.write("Booting without disk, the next boot finds the disk again")
+    }
+
+    // without disk the host does not answer, like the C++ host for an empty drive: the MSX times out
+    private fun diskPresent(command: Command): Boolean {
+        if (state.skipDisk.value == SkipDisk.ThisBoot) {
+            diskWasAbsent = true
+            Debug.log("${command.toEnum()} ignored, booted without disk")
+            return false
+        }
+        if (diskWasAbsent) {
+            // the disk is back, the MSX must read it again
+            diskWasAbsent = false
+            diskChanged = true
+        }
+        return true
+    }
+
     private suspend fun diskIo(command: Command) {
-        if (!knownDrive(command)) return
+        if (!knownDrive(command) || !diskPresent(command)) return
         val sectorAmount = command.getB()
         val size = sectorAmount * 512
         val address = command.getDestinationAddress()

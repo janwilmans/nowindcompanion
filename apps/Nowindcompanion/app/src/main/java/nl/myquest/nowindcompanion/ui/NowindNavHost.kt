@@ -81,7 +81,13 @@ fun NowindNavHost(app: NowindApp) {
             )
         }
         composable(Routes.BROWSE) {
-            BrowseScreen(app.library, settings.allSources.filter { it.enabled }, hostedDisk, back)
+            val skipDisk by app.state.skipDisk.collectAsState()
+            BrowseScreen(
+                app.library, settings.allSources.filter { it.enabled }, hostedDisk,
+                skipDisk = skipDisk,
+                onSkipDisk = { app.state.skipDisk.value = it },
+                onBack = back,
+            )
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(
