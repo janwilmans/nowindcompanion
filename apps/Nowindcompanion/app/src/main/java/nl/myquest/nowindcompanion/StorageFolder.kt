@@ -12,6 +12,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 
 const val APP_FOLDER = "nowindcompanion"
 private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
@@ -60,6 +61,24 @@ class StorageFolder(private val context: Context) {
                 block(output).also { output.fd.sync() }
             }
         }
+    }
+}
+
+// the files of the NOW: device, in the 'now' sub folder; MSX file names are upper case, so names match ignoring case
+class StorageDeviceFiles(private val context: Context, private val storage: StorageFolder) : DeviceFiles {
+    private fun dir(): DocumentFile? = storage.root.value?.folder("now")
+
+    private fun DocumentFile.find(name: String): DocumentFile? =
+        listFiles().firstOrNull { it.isFile && it.name.equals(name, ignoreCase = true) }
+
+    override fun openRead(name: String): InputStream? =
+        dir()?.find(name)?.let { storage.open(it) }
+
+    override fun openWrite(name: String, append: Boolean): OutputStream? {
+        val dir = dir() ?: return null
+        val existing = dir.find(name)
+        val file = existing ?: dir.createFile("application/octet-stream", name) ?: return null
+        return context.contentResolver.openOutputStream(file.uri, if (append) "wa" else "wt")
     }
 }
 

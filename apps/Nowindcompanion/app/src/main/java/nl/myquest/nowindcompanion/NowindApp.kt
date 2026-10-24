@@ -32,6 +32,7 @@ class NowindApp : Application() {
         settings = SettingsRepository(this)
         client = FTDIClient(this, state)
         library = DiskLibrary(storage, appScope, client, state, settings)
+        client.deviceFiles = StorageDeviceFiles(this, storage)
         firmware = FirmwareUpdater(this, appScope, client, settings, storage)
 
         appScope.launch {

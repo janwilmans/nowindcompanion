@@ -64,6 +64,11 @@ class FTDIClient(
     private var diskimage: ByteArray = ByteArray(1024 * 1024)
     private var diskChanged = true
 
+    // the storage of the NOW: device, null until it is set up
+    @Volatile
+    var deviceFiles: DeviceFiles? = null
+    private val nowDevice = NowDevice { deviceFiles }
+
     // receives a copy of the disk after a DSKIO write; null when the disk can not be saved, it is then write protected
     private var saveDisk: ((ByteArray) -> Unit)? = null
 
@@ -588,11 +593,11 @@ class FTDIClient(
             }
 
             NowindCommand.GETDATE -> notImplemented(command)
-            NowindCommand.DEVICEOPEN -> notImplemented(command)
-            NowindCommand.DEVICECLOSE -> notImplemented(command)
+            NowindCommand.DEVICEOPEN -> nowDevice.open(command, commandQueue.readBytes(11), responseQueue)
+            NowindCommand.DEVICECLOSE -> nowDevice.close(command.hl)
             NowindCommand.DEVICERNDIO -> notImplemented(command)
-            NowindCommand.DEVICEWRITE -> notImplemented(command)
-            NowindCommand.DEVICEREAD -> notImplemented(command)
+            NowindCommand.DEVICEWRITE -> nowDevice.write(command)
+            NowindCommand.DEVICEREAD -> nowDevice.read(command, responseQueue)
             NowindCommand.DEVICEEOF -> notImplemented(command)
             NowindCommand.AUXIN -> notImplemented(command)
             NowindCommand.AUXOUT -> notImplemented(command)
