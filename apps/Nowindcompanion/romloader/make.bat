@@ -4,6 +4,7 @@ pushd %~dp0
 ..\..\..\..\nowindlibraries\Release\sjasm.exe romloader.asm || goto :error
 copy /y romloader.bin ..\app\src\main\assets\romloader.bin > nul
 del romloader.bin
+if exist romloader.lst del romloader.lst
 popd
 exit /b 0
 :error

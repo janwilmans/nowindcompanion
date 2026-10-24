@@ -5,3 +5,6 @@ disks/
 # Python bytecode, regenerated when a script runs
 __pycache__/
 *.pyc
+
+# sjasm listings
+*.lst
