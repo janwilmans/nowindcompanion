@@ -31,7 +31,7 @@ class NowindApp : Application() {
         storage = StorageFolder(this)
         settings = SettingsRepository(this)
         client = FTDIClient(this, state)
-        library = DiskLibrary(storage, appScope, client, state, settings)
+        library = DiskLibrary(storage, appScope, client, state, settings) { assets.open("romloader.bin").use { it.readBytes() } }
         client.deviceFiles = StorageDeviceFiles(this, storage)
         client.onChangeImage = { name -> library.hostByMsxName(name) }
         firmware = FirmwareUpdater(this, appScope, client, settings, storage)
@@ -47,7 +47,7 @@ class NowindApp : Application() {
         appScope.launch(Dispatchers.IO) {
             storage.root.collectLatest { root ->
                 try {
-                    library.setFolder(root?.folder("disks"))
+                    library.setFolder(root?.folder("disks"), root?.folder("roms"))
                 } catch (e: Exception) {
                     Debug.error("storage folder: $e")
                     library.setFolder(null)

@@ -10,6 +10,7 @@
 *.php text eol=lf
 *.sh text eol=lf
 *.pro text eol=lf
+*.asm text eol=lf
 gradlew text eol=lf
 
 # configuration and data
@@ -53,5 +54,6 @@ LICENSE text eol=lf
 *.keystore binary
 *.dsk binary
 *.rom binary
+*.bin binary
 *.wav binary
 *.mp3 binary

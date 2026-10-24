@@ -76,6 +76,7 @@ class RemoteListingTest {
         assertEquals("https://x/nowind.php?type=DSK&msx=2+", nowindApiListUrl("https://x/nowind.php", MsxFilter.Msx2Plus))
         assertEquals("https://x/nowind.php?type=DSK", nowindApiListUrl("https://x/nowind.php", MsxFilter.All))
         assertEquals("https://x/nowind.php?type=DSK&msx=turbo-r", nowindApiListUrl("https://x/nowind.php", MsxFilter.TurboR))
+        assertEquals("https://x/nowind.php?type=ROM&msx=1", nowindApiListUrl("https://x/nowind.php", MsxFilter.Msx1, ArchiveType.Roms))
     }
 
     @Test
@@ -91,5 +92,15 @@ class RemoteListingTest {
             diskSetFileNames("3 Wishes (1988)(jp)(Disk 2 of 2)", 2)
         )
         assertEquals(listOf("Game (Disk 1 of 2).dsk", "Game (Disk 2 of 2).dsk"), diskSetFileNames("Game", 2))
+    }
+
+    @Test
+    fun roms_from_the_api_are_saved_as_rom_files() {
+        val url = "https://x/nowind.php?type=ROM"
+        val entry = parseNowindApiListing("Knightmare - Majyo Densetsu (1986) Konami [9832]\t32768\n", url, rom = true).single()
+        assertTrue(entry.rom)
+        assertFalse(entry.isDiskImage)
+        assertEquals("Knightmare - Majyo Densetsu (1986) Konami [9832].rom", entry.fileName)
+        assertEquals("$url&download=0", entry.url)
     }
 }

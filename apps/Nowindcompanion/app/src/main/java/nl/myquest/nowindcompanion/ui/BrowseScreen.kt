@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Schedule
@@ -66,7 +67,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import nl.myquest.nowindcompanion.DiskLibrary
 import nl.myquest.nowindcompanion.DiskSource
+import nl.myquest.nowindcompanion.ArchiveType
 import nl.myquest.nowindcompanion.MsxFilter
+import nl.myquest.nowindcompanion.hasRomExtension
 import nl.myquest.nowindcompanion.SourceKind
 import nl.myquest.nowindcompanion.formatSize
 import nl.myquest.nowindcompanion.searchEntries
@@ -155,10 +158,19 @@ private fun ArchiveTab(
             return@Column
         }
         if (source.kind == SourceKind.NowindApi) {
+            val archiveType by viewModel.archiveType.collectAsState()
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                items(ArchiveType.values()) { item ->
+                    FilterChip(
+                        selected = item == archiveType,
+                        onClick = { viewModel.setArchiveType(item) },
+                        label = { Text(item.label) }
+                    )
+                }
+                item { Spacer(Modifier.width(8.dp)) }
                 items(MsxFilter.values()) { item ->
                     FilterChip(
                         selected = item == msxFilter,
@@ -288,7 +300,11 @@ private fun DiskRow(
         },
         leadingContent = {
             IconBadge(
-                if (downloaded) Icons.Rounded.CheckCircle else Icons.Rounded.Save,
+                when {
+                    downloaded -> Icons.Rounded.CheckCircle
+                    entry.rom -> Icons.Rounded.Memory
+                    else -> Icons.Rounded.Save
+                },
                 container = if (downloaded) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
                 content = if (downloaded) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
             )
@@ -312,7 +328,7 @@ private fun LibraryTab(files: List<LibraryFile>, hostedDisk: String?, library: D
     if (files.isEmpty()) {
         CenteredBox {
             Text(
-                "No disks downloaded yet.\nQueue some from the archive.",
+                "Nothing downloaded yet.\nQueue some from the archive.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyLarge
             )
@@ -336,7 +352,7 @@ private fun LibraryTab(files: List<LibraryFile>, hostedDisk: String?, library: D
                 },
                 leadingContent = {
                     IconBadge(
-                        Icons.Rounded.Save,
+                        if (hasRomExtension(file.name)) Icons.Rounded.Memory else Icons.Rounded.Save,
                         container = if (hosted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
                         content = if (hosted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
                     )

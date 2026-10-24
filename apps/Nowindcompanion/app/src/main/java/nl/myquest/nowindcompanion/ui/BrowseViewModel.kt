@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import nl.myquest.nowindcompanion.DiskSource
+import nl.myquest.nowindcompanion.ArchiveType
 import nl.myquest.nowindcompanion.MsxFilter
 import nl.myquest.nowindcompanion.RemoteEntry
 import nl.myquest.nowindcompanion.SourceKind
@@ -39,6 +40,9 @@ class BrowseViewModel : ViewModel() {
     // for the Nowind API
     private val _msxFilter = MutableStateFlow(MsxFilter.All)
     val msxFilter: StateFlow<MsxFilter> = _msxFilter
+
+    private val _archiveType = MutableStateFlow(ArchiveType.Disks)
+    val archiveType: StateFlow<ArchiveType> = _archiveType
 
     private val _listing = MutableStateFlow<ListingState>(ListingState.Loaded(emptyList()))
     val listing: StateFlow<ListingState> = _listing
@@ -71,6 +75,12 @@ class BrowseViewModel : ViewModel() {
         load()
     }
 
+    fun setArchiveType(value: ArchiveType) {
+        _archiveType.value = value
+        _filter.value = ""
+        load()
+    }
+
     fun open(entry: RemoteEntry) {
         if (!entry.isDirectory) return
         _stack.value = _stack.value + entry.url
@@ -98,7 +108,7 @@ class BrowseViewModel : ViewModel() {
 
     private fun requestUrl(): String? {
         val source = _source.value ?: return null
-        return if (source.kind == SourceKind.NowindApi) nowindApiListUrl(source.url, _msxFilter.value) else _stack.value.lastOrNull()
+        return if (source.kind == SourceKind.NowindApi) nowindApiListUrl(source.url, _msxFilter.value, _archiveType.value) else _stack.value.lastOrNull()
     }
 
     private fun load() {
@@ -118,7 +128,7 @@ class BrowseViewModel : ViewModel() {
             _listing.value = try {
                 val entries = withContext(Dispatchers.IO) {
                     val fetched = fetchText(url)
-                    if (source.kind == SourceKind.NowindApi) parseNowindApiListing(fetched.text, url)
+                    if (source.kind == SourceKind.NowindApi) parseNowindApiListing(fetched.text, url, _archiveType.value == ArchiveType.Roms)
                     else parseHtmlListing(fetched.text, fetched.url)
                 }.sortedWith(compareByDescending<RemoteEntry> { it.isDirectory }.thenBy { it.name.lowercase() })
                 cache[url] = entries

@@ -24,13 +24,15 @@ data class DownloadProgress(val request: DownloadRequest, val bytes: Long, val t
 // a downloaded disk image, a snapshot so the UI does not query the storage provider while drawing
 data class LibraryFile(val name: String, val size: Long, val document: DocumentFile)
 
-// downloaded disk images in Download/nowindcompanion/disks, the download queue worker, and hosting a disk on the interface
+// downloaded disk images in Download/nowindcompanion/disks and ROMs in .../roms, the download queue worker,
+// and hosting a disk (or the loader disk of a ROM) on the interface
 class DiskLibrary(
     private val storage: StorageFolder,
     private val scope: CoroutineScope,
     private val client: FTDIClient,
     private val state: HostState,
     private val settings: SettingsRepository,
+    private val romLoader: () -> ByteArray,     // romloader.bin, see RomDisk.kt
 ) {
     private val lock = Any()
     private val queue = DownloadQueue()
@@ -55,6 +57,9 @@ class DiskLibrary(
     @Volatile
     private var dir: DocumentFile? = null
 
+    @Volatile
+    private var romDir: DocumentFile? = null
+
     // short user facing notifications, shown as snackbar
     private val _events = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val events: SharedFlow<String> = _events
@@ -65,14 +70,17 @@ class DiskLibrary(
     }
 
     // blocking, call from a background thread
-    fun setFolder(folder: DocumentFile?) {
+    fun setFolder(folder: DocumentFile?, roms: DocumentFile? = null) {
         dir = folder
+        romDir = roms
         refreshFiles()
         if (folder != null) wake.trySend(Unit)
     }
 
     // an empty file is what is left when the device lost power right after a download, fetch it again
-    private fun find(name: String): DocumentFile? = dir?.findFile(name)?.takeIf { it.isFile && it.length() > 0 }
+    private fun find(name: String): DocumentFile? = dirFor(name)?.findFile(name)?.takeIf { it.isFile && it.length() > 0 }
+
+    private fun dirFor(name: String): DocumentFile? = if (hasRomExtension(name)) romDir else dir
 
     private fun isDownloaded(entry: RemoteEntry): Boolean = _files.value.any { it.name == entry.fileName }
 
@@ -133,6 +141,10 @@ class DiskLibrary(
         scope.launch(Dispatchers.IO) {
             val name = file.name.orEmpty()
             try {
+                if (hasRomExtension(name)) {
+                    hostRom(file, name)
+                    return@launch
+                }
                 val image = readDiskImage(name) { storage.open(file) }
                 // the disk in a zip can not be saved back, so it is write protected
                 val zipped = name.endsWith(".zip", ignoreCase = true)
@@ -146,6 +158,16 @@ class DiskLibrary(
                 _events.tryEmit("Could not load $name: ${e.message}")
             }
         }
+    }
+
+    // a ROM is started from a disk that only exists in memory, so it is write protected
+    private suspend fun hostRom(file: DocumentFile, name: String) {
+        val image = romImage(storage.open(file).use { it.readBytes() })
+        client.insertDisk(buildLoaderDisk(image, romLoader()), null)
+        state.hostedDisk.value = name
+        settings.setHostedDisk(name)
+        state.write("Hosting ROM $name with the loader disk")
+        _events.tryEmit("Hosting $name, reset the MSX to start it")
     }
 
     fun delete(file: LibraryFile) {
@@ -176,14 +198,14 @@ class DiskLibrary(
     }
 
     private fun refreshFiles() {
-        _files.value = dir?.listFiles()
-            ?.mapNotNull { f ->
+        _files.value = listOfNotNull(dir, romDir)
+            .flatMap { it.listFiles().asList() }
+            .mapNotNull { f ->
                 val name = f.name ?: return@mapNotNull null
                 val size = f.length()
                 if (f.isFile && size > 0 && !name.endsWith(".part")) LibraryFile(name, size, f) else null
             }
-            ?.sortedBy { it.name.lowercase() }
-            .orEmpty()
+            .sortedBy { it.name.lowercase() }
     }
 
     private fun publishQueue() {
@@ -223,7 +245,7 @@ class DiskLibrary(
     // returns the file to host: the downloaded file, or the first disk of a multi disk set
     private fun download(request: DownloadRequest): DocumentFile {
         val entry = request.entry
-        val dir = dir ?: throw IOException("no access to the storage folder, choose it first")
+        val dir = dirFor(entry.fileName) ?: throw IOException("no access to the storage folder, choose it first")
         find(entry.fileName)?.let { return it }
         val part = dir.replaceFile(entry.fileName + ".part")
         state.write("Download: ${entry.url}")

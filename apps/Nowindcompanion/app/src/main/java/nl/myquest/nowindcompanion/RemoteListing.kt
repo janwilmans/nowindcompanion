@@ -14,17 +14,27 @@ data class RemoteEntry(
     val size: String = "",
     // downloads from the Nowind API start with a line of metadata, see DiskLibrary
     val fromNowindApi: Boolean = false,
+    // a cartridge ROM instead of a disk image, started with a loader disk, see RomDisk.kt
+    val rom: Boolean = false,
 ) {
     val isDiskImage: Boolean
-        get() = !isDirectory && (fromNowindApi || hasDiskExtension(name))
+        get() = !isDirectory && !rom && (fromNowindApi || hasDiskExtension(name))
 
-    // the name of the downloaded file in the disk library
+    // the name of the downloaded file in the library
     val fileName: String
-        get() = safeFileName(if (fromNowindApi) "$name.dsk" else name)
+        get() = safeFileName(
+            when {
+                !fromNowindApi -> name
+                rom -> "$name.rom"
+                else -> "$name.dsk"
+            }
+        )
 }
 
 private fun hasDiskExtension(name: String) =
     name.endsWith(".zip", ignoreCase = true) || name.endsWith(".dsk", ignoreCase = true)
+
+fun hasRomExtension(name: String) = name.endsWith(".rom", ignoreCase = true)
 
 fun safeFileName(name: String): String = name.replace(Regex("""[\\/:*?"<>|]"""), "_")
 
@@ -40,7 +50,7 @@ fun openHttpConnection(url: String): HttpURLConnection {
 private val SIZE = Regex("""(?i)^(\d+(\.\d+)?\s*([KMG]i?B?|B|bytes)|\d{5,})$""")
 
 // Reads both web server directory indexes and ordinary pages that link to disk images:
-// links to sub folders of the page (ending in '/') become directories, links to .zip/.dsk files become files.
+// links to sub folders of the page (ending in '/') become directories, links to .zip/.dsk/.rom files become files.
 fun parseHtmlListing(html: String, baseUrl: String): List<RemoteEntry> {
     val document = Jsoup.parse(html, baseUrl)
     val path = baseUrl.substringBefore('?')
@@ -52,7 +62,7 @@ fun parseHtmlListing(html: String, baseUrl: String): List<RemoteEntry> {
         val url = link.absUrl("href").substringBefore('#')
         val urlPath = url.substringBefore('?')
         val isDirectory = urlPath.endsWith("/") && urlPath.startsWith(folder) && urlPath.length > folder.length
-        if (!isDirectory && !hasDiskExtension(urlPath)) return@mapNotNull null
+        if (!isDirectory && !hasDiskExtension(urlPath) && !hasRomExtension(urlPath)) return@mapNotNull null
         if (!seen.add(url)) return@mapNotNull null
         // the link text is often 'Download', the url always has the real name
         val name = decodeUrlPart(urlPath.trimEnd('/').substringAfterLast('/'))
@@ -60,18 +70,18 @@ fun parseHtmlListing(html: String, baseUrl: String): List<RemoteEntry> {
             ?.map { it.text().trim() }
             ?.firstOrNull { SIZE.matches(it) }
             .orEmpty()
-        RemoteEntry(name, url, isDirectory, size)
+        RemoteEntry(name, url, isDirectory, size, rom = !isDirectory && hasRomExtension(urlPath))
     }
 }
 
 // The Nowind API lists one 'name<TAB>size in bytes' per line; a file is downloaded by its index in that same listing.
-fun parseNowindApiListing(text: String, listUrl: String): List<RemoteEntry> {
+fun parseNowindApiListing(text: String, listUrl: String, rom: Boolean = false): List<RemoteEntry> {
     val lines = text.lines().filter { it.isNotBlank() }
     if (lines.size == 1 && lines[0].startsWith("No files found")) return emptyList()
     return lines.mapIndexedNotNull { index, line ->
         val name = line.substringBefore('\t').trim()
         val bytes = line.substringAfter('\t', "").trim().toLongOrNull() ?: return@mapIndexedNotNull null
-        RemoteEntry(name, "$listUrl&download=$index", isDirectory = false, size = formatSize(bytes), fromNowindApi = true)
+        RemoteEntry(name, "$listUrl&download=$index", isDirectory = false, size = formatSize(bytes), fromNowindApi = true, rom = rom)
     }
 }
 
@@ -84,8 +94,14 @@ enum class MsxFilter(val label: String, val param: String?) {
     TurboR("Turbo R", "turbo-r"),
 }
 
-fun nowindApiListUrl(baseUrl: String, filter: MsxFilter): String =
-    "$baseUrl?type=DSK" + (filter.param?.let { "&msx=$it" } ?: "")
+// what the Nowind API lists: disk images or cartridge ROMs
+enum class ArchiveType(val label: String, val param: String) {
+    Disks("Disks", "DSK"),
+    Roms("ROMs", "ROM"),
+}
+
+fun nowindApiListUrl(baseUrl: String, filter: MsxFilter, type: ArchiveType = ArchiveType.Disks): String =
+    "$baseUrl?type=${type.param}" + (filter.param?.let { "&msx=$it" } ?: "")
 
 fun formatSize(bytes: Long): String = when {
     bytes >= 1024 * 1024 -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
