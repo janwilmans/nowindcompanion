@@ -236,8 +236,13 @@ class FTDIClient(
 
             try {
                 //println("receivedBytes: ${receivedBytes}")
-                val data = ByteArray(receivedBytes)
-                ftdiDevice.read(data)
+                val buffer = ByteArray(receivedBytes)
+                val read = ftdiDevice.read(buffer, receivedBytes)
+                if (read < 0) {
+                    Debug.log("io: read returned $read, connection lost...")
+                    return
+                }
+                val data = buffer.copyOf(read)
                 logRawBytes("RX", data.map { it.toInt() and 0xFF })
                 commandQueue.add(data)
 
@@ -385,6 +390,7 @@ class FTDIClient(
                     Debug.log("readHandler TimeoutException: ${e.message}, queue: ${commandQueue}")
                     Debug.error("${e.message}, %d bytes remaining in queue were removed.".format(commandQueue.size()))
                     commandQueue.clear()
+                    responseQueue.clear()
                     // ignored intentionally
                 }
 
@@ -392,6 +398,7 @@ class FTDIClient(
                     Debug.log("readHandler IOException: ${e.message}, queue: ${commandQueue}")
                     Debug.error("Nowind command de-sync, %d bytes remaining in queue were removed.".format(commandQueue.size()))
                     commandQueue.clear()
+                    responseQueue.clear()
                     // ignored intentionally
                 }
 
@@ -400,6 +407,7 @@ class FTDIClient(
                     Debug.log("readHandler exception: $e, queue: ${commandQueue}")
                     Debug.error("Nowind command failed:$e, %d bytes remaining in queue were removed.".format(commandQueue.size()))
                     commandQueue.clear()
+                    responseQueue.clear()
                 }
             }
         }

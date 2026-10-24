@@ -1,8 +1,13 @@
 package nl.myquest.nowindcompanion
 
+import java.io.IOException
 import java.util.LinkedList
 
 const val TWOBANKLIMIT = 0x8000
+
+// a block that keeps failing means the link is broken; the MSX only reports an error when it times out,
+// BlockRead.ERROR would end the transfer as if it succeeded
+const val MAX_BLOCK_RETRIES = 10
 
 // DSKIO read, modeled after BlockRead.cc of the C++ host.
 //
@@ -110,6 +115,9 @@ class ReadOperation(private val startAddress: Int, private val data: List<Int>) 
                     queue.removeFirst()
                 } else {
                     retransmissions++
+                    if (++block.retries > MAX_BLOCK_RETRIES) {
+                        throw IOException("block at 0x%04X failed %d times, transfer aborted".format(block.transferAddress, MAX_BLOCK_RETRIES))
+                    }
                     resend(block, responseQueue)
                     queue.removeFirst()
                     queue.addLast(block)

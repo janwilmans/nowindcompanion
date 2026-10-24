@@ -105,6 +105,7 @@ class CommandQueue(
         //println("waitFor ${values} returned...")
     }
 
+    // the timeout restarts whenever a byte arrives, so it is the maximum gap between two bytes (like the C++ host)
     suspend fun waitForBytes(size: Int) {
         var lastYieldSize = -1
         while (true) {
@@ -116,8 +117,28 @@ class CommandQueue(
             if (queue.size != lastYieldSize) {
                 //println("waitForBytes yielded at ${queue.size}/${size} bytes.")
                 lastYieldSize = queue.size
+                restartTimeout()
             }
+            checkTimeout("waitForBytes")
             yield()
         }
+    }
+
+    // reads bytes until (and including) a terminator, or until maxLength bytes were read
+    suspend fun readUntil(terminators: Set<Int>, maxLength: Int): List<Int> {
+        val result = mutableListOf<Int>()
+        restartTimeout()
+        while (result.size < maxLength) {
+            val value = next()
+            restartTimeout()
+            result.add(value)
+            if (value in terminators) break
+        }
+        return result
+    }
+
+    suspend fun readBytes(count: Int): List<Int> {
+        waitForBytes(count)
+        return List(count) { readByte() }
     }
 }

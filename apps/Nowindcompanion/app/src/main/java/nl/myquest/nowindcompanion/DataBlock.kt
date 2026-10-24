@@ -6,6 +6,7 @@ import java.lang.IllegalStateException
 // transferAddress is the END address for a fast block (the MSX writes back to front) and the START address for a slow block.
 class DataBlock(val data: List<Int>, val transferAddress: Int = 0, val fast: Boolean = true) {
     val marker = findMarker()
+    var retries = 0
 
     // the protocol relies on the block size being smaller then 255 bytes,
     // because that means there is always an unused value in the block.
