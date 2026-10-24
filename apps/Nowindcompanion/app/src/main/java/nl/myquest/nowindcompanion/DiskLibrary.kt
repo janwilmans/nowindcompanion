@@ -4,6 +4,7 @@ import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -35,6 +36,9 @@ class DiskLibrary(
     private val queue = DownloadQueue()
     private val wake = Channel<Unit>(Channel.CONFLATED)
 
+    // the disk contents after a DSKIO write; only the newest matters, see saver()
+    private val saves = Channel<Pair<DocumentFile, ByteArray>>(Channel.CONFLATED)
+
     @Volatile
     private var cancelUrl: String? = null
 
@@ -57,6 +61,7 @@ class DiskLibrary(
 
     init {
         scope.launch(Dispatchers.IO) { worker() }
+        scope.launch(Dispatchers.IO) { saver() }
     }
 
     // blocking, call from a background thread
@@ -117,7 +122,9 @@ class DiskLibrary(
             val name = file.name.orEmpty()
             try {
                 val image = readDiskImage(name) { storage.open(file) }
-                client.insertDisk(image)
+                // the disk in a zip can not be saved back, so it is write protected
+                val zipped = name.endsWith(".zip", ignoreCase = true)
+                client.insertDisk(image, if (zipped) null else { data -> saves.trySend(file to data) })
                 state.hostedDisk.value = name
                 settings.setHostedDisk(name)
                 state.write("Hosting $name (${image.size} bytes)")
@@ -133,6 +140,26 @@ class DiskLibrary(
         scope.launch(Dispatchers.IO) {
             file.document.delete()
             refreshFiles()
+        }
+    }
+
+    // a DSKIO write of a file comes as many small writes, wait for the burst to end and save the result once
+    private suspend fun saver() {
+        for ((file, data) in saves) {
+            delay(1000)
+            val newest = saves.tryReceive().getOrNull()
+            if (newest == null || newest.first.uri != file.uri) save(file, data)
+            if (newest != null) save(newest.first, newest.second)
+        }
+    }
+
+    private fun save(file: DocumentFile, data: ByteArray) {
+        try {
+            storage.write(file) { it.write(data) }
+            Debug.log("saved ${file.name} after a DSKIO write")
+        } catch (e: Exception) {
+            Debug.error("saving ${file.name} failed: $e")
+            _events.tryEmit("Could not save ${file.name}: ${e.message}")
         }
     }
 

@@ -64,11 +64,16 @@ class FTDIClient(
     private var diskimage: ByteArray = ByteArray(1024 * 1024)
     private var diskChanged = true
 
+    // receives a copy of the disk after a DSKIO write; null when the disk can not be saved, it is then write protected
+    private var saveDisk: ((ByteArray) -> Unit)? = null
+
     @Volatile
     var enableDos2 = false
 
+    private class PendingDisk(val image: ByteArray, val save: ((ByteArray) -> Unit)?)
+
     // set from the UI thread, swapped in by the hosting thread between commands
-    private val pendingDisk = AtomicReference<ByteArray?>(null)
+    private val pendingDisk = AtomicReference<PendingDisk?>(null)
 
     // a firmware update or verify, run by the hosting thread instead of hosting, see withFlashLink
     private class FlashJob(val block: (FlashLink) -> Any?) {
@@ -428,6 +433,64 @@ class FTDIClient(
         return false
     }
 
+    private suspend fun diskIo(command: Command) {
+        if (!knownDrive(command)) return
+        val sectorAmount = command.getB()
+        val size = sectorAmount * 512
+        val address = command.getDestinationAddress()
+        val sector = command.getStartSector()
+        val position = sector.toLong() * 512
+        val write = (command.f and 1) == 1   // CF (Carry Flag) means "Write" if set and "Read" when not set.
+        val direction = if (write) "write" else "read"
+        if (sectorAmount == 0 || position + size > diskimage.size) {
+            // no response is legal, the MSX will time out and report a disk error (like the C++ host)
+            Debug.log("DSKIO $direction of $sectorAmount sectors at sector $sector is outside the disk image, ignored")
+            return
+        }
+
+        val start = System.nanoTime()
+        Debug.log("DSKIO $direction transfer sector $sector at address ${String.format("0x%04X", address)}, $sectorAmount sectors")
+        if (write) {
+            if (address + size > 0x10000) {
+                Debug.log("DSKIO write of $size bytes from 0x%04X wraps around the address space, ignored".format(address))
+                return
+            }
+            val data = WriteOperation(address, size).execute(responseQueue, commandQueue, saveDisk == null)
+            if (data == null) {
+                Debug.log("  DSKIO write refused, the disk is write protected")
+                return
+            }
+            data.copyInto(diskimage, position.toInt())
+            saveDisk?.invoke(diskimage.copyOf())
+        } else {
+            val data = readDisk(diskimage, position.toInt(), size)
+            ReadOperation(address, data).execute(responseQueue, commandQueue)
+        }
+        // includes waiting for the MSX to acknowledge every block, so it is the speed the MSX sees
+        val elapsed = System.nanoTime() - start
+        if (write) {
+            state.writeStats.update { it.add(size.toLong(), elapsed) }
+        } else {
+            state.readStats.update { it.add(size.toLong(), elapsed) }
+            state.recentReads.add(size.toLong(), elapsed)
+        }
+        Debug.log("  DSKIO $direction done in ${elapsed / 1_000_000} ms, ${formatSpeed(size / 1024.0 / (elapsed / 1e9))}")
+    }
+
+    private fun diskChange() {
+        responseQueue.addHeader()
+        if (diskChanged) {
+            diskChanged = false
+            responseQueue.add(255) // changed
+            val mediaDescriptor = mediaDescriptor()
+            Debug.log("DSKCHG returns mediaDescriptor ${mediaDescriptor}")
+            responseQueue.add(mediaDescriptor)
+        } else {
+            responseQueue.add(0)   // not changed
+            responseQueue.add(255) // dummy
+        }
+    }
+
     // the first byte of the FAT. The FAT follows the reserved sectors (boot sector offset 14), that is sector 1 on
     // nearly every disk; old MSX-DOS1 disks have no valid boot sector, their FAT is at sector 1 as well
     private fun mediaDescriptor(): Int {
@@ -488,15 +551,17 @@ class FTDIClient(
         responseQueue.add16(firstDirSector)             // 17-18 FIRDIR
     }
 
-    // the new image is used from the next command on, the MSX sees it as a disk change
-    fun insertDisk(image: ByteArray) {
-        pendingDisk.set(image)
+    // the new image is used from the next command on, the MSX sees it as a disk change.
+    // Without save the disk is write protected.
+    fun insertDisk(image: ByteArray, save: ((ByteArray) -> Unit)? = null) {
+        pendingDisk.set(PendingDisk(image, save))
     }
 
     private suspend fun handleCommand(command: Command) {
         state.commands.update { it + 1 }
         pendingDisk.getAndSet(null)?.let {
-            diskimage = it
+            diskimage = it.image
+            saveDisk = it.save
             diskChanged = true
         }
         if (command.toEnum() != NowindCommand.DSKIO) {
@@ -504,61 +569,8 @@ class FTDIClient(
         }
 
         when (command.toEnum()) {
-            NowindCommand.DSKIO -> {
-                if (!knownDrive(command)) return
-
-                //io_beep();
-
-                // no response is legal and will cause a 'Disk Offline' to occur on the MSX
-                // for example, this would be expected when a disk number is requested that is unknown
-                if ((command.f and 1) == 1)   // CF (Carry Flag) means "Write" if set and "Read" when not set.
-                {
-                    Debug.log("Writing not implemented!")
-                    return
-                }
-
-                // DSKIO read
-
-                val sectorAmount = command.getB()
-                val size = sectorAmount * 512
-                val address = command.getDestinationAddress();
-                var sector = command.getStartSector()
-                val diskimageReadPosition = sector * 512;
-                if (sectorAmount == 0 || diskimageReadPosition < 0 || diskimageReadPosition + size > diskimage.size) {
-                    // no response is legal, the MSX will time out and report a disk error (like the C++ host)
-                    Debug.log("DSKIO read of $sectorAmount sectors at sector $sector is outside the disk image, ignored")
-                    return
-                }
-                val data = readDisk(diskimage, diskimageReadPosition, size)
-
-                val start = System.nanoTime()
-                Debug.log("DSKIO read transfer sector $sector to address ${String.format("0x%04X", address)}, $sectorAmount sectors")
-                ReadOperation(address, data).execute(responseQueue, commandQueue)
-                // includes waiting for the MSX to acknowledge every block, so it is the speed the MSX sees
-                val elapsed = System.nanoTime() - start
-                state.readStats.update { it.add(size.toLong(), elapsed) }
-                state.recentReads.add(size.toLong(), elapsed)
-                Debug.log("  DSKIO read done in ${elapsed / 1_000_000} ms, ${formatSpeed(size / 1024.0 / (elapsed / 1e9))}")
-            }
-
-            NowindCommand.DSKCHG -> if (knownDrive(command)) {
-                //responseQueue.addHeader()
-                //responseQueue.add(1)    // Say nothing changed (incomplete implementation)
-                //responseQueue.add(255)  // Dummy
-
-                responseQueue.addHeader()
-                if (diskChanged) {
-                    diskChanged = false
-                    responseQueue.add(255) // changed
-                    val mediaDescriptor = mediaDescriptor()
-                    Debug.log("DSKCHG returns mediaDescriptor ${mediaDescriptor}")
-                    responseQueue.add(mediaDescriptor) // return media descriptor
-                } else {
-                    responseQueue.add(0)   // not changed
-                    responseQueue.add(255) // dummy
-                }
-            }
-
+            NowindCommand.DSKIO -> diskIo(command)
+            NowindCommand.DSKCHG -> if (knownDrive(command)) diskChange()
             NowindCommand.GETDPB -> if (knownDrive(command)) getDpb(command)
             NowindCommand.CHOICE -> notImplemented(command)
             NowindCommand.DSKFMT -> notImplemented(command)

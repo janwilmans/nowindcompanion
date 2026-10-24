@@ -18,7 +18,7 @@ class HostState {
     val connection = MutableStateFlow(ConnectionState.Stopped)
     val hostedDisk = MutableStateFlow<String?>(null)
     val readStats = MutableStateFlow(TransferStats())
-    val writeStats = MutableStateFlow(TransferStats())   // DSKIO write is not implemented yet, stays empty
+    val writeStats = MutableStateFlow(TransferStats())
     val recentReads = RecentTransfers()
     // counts the commands received from the MSX, the activity light blinks when it changes
     val commands = MutableStateFlow(0L)

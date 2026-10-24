@@ -5,7 +5,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 
-// the MSX side of blockRead (common.asm): reads what the host sends and answers like the ROM does
+// the MSX side of blockRead and blockWrite (common.asm): reads what the host sends and answers like the ROM does
 class FakeMsx {
     val memory = ByteArray(0x10000)
 
@@ -19,8 +19,16 @@ class FakeMsx {
     var failAllAcks = false
     private var acks = 0
 
+    // write chunks with these numbers (counting from 0) are sent with a wrong sequence number
+    val failChunks = mutableSetOf<Int>()
+    private var chunks = 0
+
+    // action 0 means 'data ahead' in a write and 'more data for page 2/3' in a read
+    private var writing = false
+
     // runs the host operation until it is done, feeding the MSX answers back to it
-    fun run(responseQueue: ResponseQueue, commandQueue: CommandQueue, operation: suspend () -> Unit) = runBlocking {
+    fun run(responseQueue: ResponseQueue, commandQueue: CommandQueue, writing: Boolean = false, operation: suspend () -> Unit) = runBlocking {
+        this@FakeMsx.writing = writing
         val job: Job = launch { operation() }
         while (job.isActive) {
             process(responseQueue.GetResponse(), commandQueue)
@@ -39,6 +47,10 @@ class FakeMsx {
             // header: FF AF 05
             check(next() == 0xFF && next() == 0xAF && next() == 0x05) { "no header at ${i - 3}" }
             val action = next()
+            if (writing && action == BlockWrite.ERROR.value) {
+                frames += Frame(action, size = next())  // the error code
+                continue
+            }
             when (action) {
                 BlockRead.FASTTRANSFER.value -> {
                     val endAddress = next16()
@@ -63,6 +75,23 @@ class FakeMsx {
                     val tail = next()
                     check(marker == tail)
                     ack(tail, address, size, commandQueue)
+                }
+
+                BlockRead.EXIT_MORE_DATA_AHEAD.value -> {
+                    if (writing) {
+                        val address = next16()
+                        val size = next16()
+                        val sequence = next()
+                        frames += Frame(BlockWrite.DATA_AHEAD.value, address, size)
+                        val data = mutableListOf<Int>()
+                        val wrong = chunks++ in failChunks
+                        data += if (wrong) sequence xor 0xFF else sequence
+                        repeat(size) { data += memory[address + it].toInt() and 0xFF }
+                        data += sequence
+                        commandQueue.add(ByteArray(data.size) { data[it].toByte() })
+                    } else {
+                        frames += Frame(action)
+                    }
                 }
 
                 else -> frames += Frame(action)
