@@ -40,3 +40,11 @@ val StatusGreenLight = Color(0xFF1E8E3E)
 val StatusGreenDark = Color(0xFF81C995)
 val StatusAmberLight = Color(0xFFB06000)
 val StatusAmberDark = Color(0xFFFDD663)
+
+// icon badges of the disk lists: a smooth light green for downloaded, the blue of the MSX logo for hosting
+val DownloadedGreenContainerLight = Color(0xFFD3EDD6)
+val DownloadedGreenContentLight = Color(0xFF1E6B33)
+val DownloadedGreenContainerDark = Color(0xFF244F31)
+val DownloadedGreenContentDark = Color(0xFFB9E4C2)
+val MsxBlue = Color(0xFF0A5CC2)
+val OnMsxBlue = Color(0xFFFFFFFF)

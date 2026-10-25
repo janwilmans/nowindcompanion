@@ -8,6 +8,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -19,6 +22,18 @@ import java.util.Locale
 
 // a firmware file picked on the phone, kept for as long as the app runs
 class LocalFirmware(val name: String, val data: ByteArray)
+
+// version: the last 'Check version', verify: the hash read by the last 'Verify', written: name and url of the last 'Update'
+data class FirmwareCache(
+    val version: List<Pair<String, String>>? = null,
+    val verify: List<Pair<String, String>>? = null,
+    val written: List<Pair<String, String>>? = null,
+) {
+    // as text for a problem report, empty when nothing is cached
+    fun toReport(): String = listOf("Interface version" to version, "Last verify" to verify, "Last firmware update" to written)
+        .filter { it.second != null }
+        .joinToString("\n\n") { (title, items) -> title + "\n" + items!!.joinToString("\n") { "  ${it.first}: ${it.second}" } }
+}
 
 sealed interface FirmwareStatus {
     data object Idle : FirmwareStatus
@@ -51,6 +66,11 @@ class FirmwareUpdater(
     private val _fileInfo = MutableStateFlow<List<Pair<String, String>>?>(null)
     val fileInfo: StateFlow<List<Pair<String, String>>?> = _fileInfo
 
+    // what the buttons found out, kept for as long as the app runs and shown / reported until a button refreshes it
+    // stored in the settings, so it survives a restart of the app
+    val cache: StateFlow<FirmwareCache> = settings.settings.map { it.firmwareCache }
+        .stateIn(scope, SharingStarted.Eagerly, FirmwareCache())
+
     private val busy: Boolean
         get() = _status.value is FirmwareStatus.Busy
 
@@ -80,6 +100,7 @@ class FirmwareUpdater(
     }
 
     fun verify() = run("Verify") {
+        settings.updateFirmwareCache { it.copy(verify = null) }
         val rom = loadFirmware()
         val versions = findFirmwareVersions(rom)
         _fileInfo.value = listOf(
@@ -88,21 +109,43 @@ class FirmwareUpdater(
             "Firmware" to (versions.firmware ?: "no version found"),
             "Flash writer" to (versions.flashWriter ?: "no version found"),
         )
-        withFlashWriter { writer ->
-            when (val offset = writer.verify(rom)) {
-                null -> "The interface already has this firmware."
-                else -> "The interface has different firmware (the first difference is at 0x%06X).".format(offset)
-            }
+        val result = withFlashWriter { it.verifyWithHash(rom) }
+        val comparedWith = firmwareName()
+        settings.updateFirmwareCache {
+            it.copy(
+                verify = listOf(
+                    "Compared with" to comparedWith,
+                    "Result" to (result.firstDifference?.let { offset -> "different, first difference at 0x%06X".format(offset) } ?: "equal"),
+                    "SHA-256 of the interface" to result.sha256,
+                    "Bytes read" to result.size.toString(),
+                )
+            )
+        }
+        when (val offset = result.firstDifference) {
+            null -> "The interface already has this firmware."
+            else -> "The interface has different firmware (the first difference is at 0x%06X).".format(offset)
         }
     }
 
     fun update() = run("Update") {
         val rom = loadFirmware()
         val erase = settings.settings.first().firmwareErase
-        withFlashWriter { writer ->
-            writer.update(rom, erase)
-            "Firmware updated and verified. Switch the MSX off and on to start it."
+        val written = firmwareName()
+        val url = if (_useLocalFile.value) null else expandFirmwareName(settings.settings.first().firmwareSource)
+        // the flash rom changes, what was cached about it no longer holds
+        settings.updateFirmwareCache { it.copy(version = null, verify = null, written = null) }
+        withFlashWriter { it.update(rom, erase) }
+        settings.updateFirmwareCache {
+            it.copy(
+                written = listOfNotNull(
+                    "Name" to written,
+                    url?.let { u -> "Url" to u },
+                    "Erase" to erase.name,
+                    "Written at" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()),
+                )
+            )
         }
+        "Firmware updated and verified. Switch the MSX off and on to start it."
     }
 
     // saved as firmware/nowind-YYMMDD-HHmmss.rom in the storage folder, to restore later as a file on this phone
@@ -122,7 +165,10 @@ class FirmwareUpdater(
         _fileInfo.value = null
         scope.launch(Dispatchers.IO) {
             try {
-                _status.value = FirmwareStatus.Report(client.withFlashLink { link -> versionReport(link) })
+                settings.updateFirmwareCache { it.copy(version = null) }
+                val report = client.withFlashLink { link -> versionReport(link) }
+                settings.updateFirmwareCache { it.copy(version = report) }
+                _status.value = FirmwareStatus.Report(report)
             } catch (e: Exception) {
                 Debug.error("firmware version check failed: $e")
                 _status.value = FirmwareStatus.Failed("Check version failed: ${e.message}")

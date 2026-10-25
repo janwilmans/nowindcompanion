@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
@@ -85,7 +86,10 @@ import nl.myquest.nowindcompanion.searchEntries
 import nl.myquest.nowindcompanion.DownloadProgress
 import nl.myquest.nowindcompanion.DownloadRequest
 import nl.myquest.nowindcompanion.RemoteEntry
+import nl.myquest.nowindcompanion.ReportTarget
 import nl.myquest.nowindcompanion.SkipDisk
+import nl.myquest.nowindcompanion.sizeText
+import nl.myquest.nowindcompanion.sourceNameOf
 import kotlinx.coroutines.launch
 import nl.myquest.nowindcompanion.LibraryFile
 
@@ -107,9 +111,11 @@ fun BrowseScreen(
     onSkipDisk: (SkipDisk) -> Unit,
     commands: Long,                 // blinks the activity light when the MSX reads or writes
     marks: ImageMarks,
+    buildReport: (ReportTarget, String) -> String,     // the text of a 'not working' report, see ProblemReport.kt
     onBack: () -> Unit,
 ) {
     val viewModel: BrowseViewModel = viewModel()
+    var reporting by remember { mutableStateOf<ReportTarget?>(null) }
     val source by viewModel.source.collectAsState()
     val msxFilter by viewModel.msxFilter.collectAsState()
     val stack by viewModel.stack.collectAsState()
@@ -183,13 +189,15 @@ fun BrowseScreen(
             }
             Box(Modifier.weight(1f)) {
                 when (tab) {
-                    0 -> ArchiveTab(viewModel, sources, source, msxFilter, stack, listing, filter, library, pending, progress, files, marks)
-                    else -> LibraryTab(files, hostedDisk, library, marks)
+                    0 -> ArchiveTab(viewModel, sources, source, msxFilter, stack, listing, filter, library, pending, progress, files, hostedDisk, marks) { reporting = it }
+                    else -> LibraryTab(files, hostedDisk, library, marks) { reporting = it }
                 }
             }
             DownloadBar(progress, pending, library)
         }
     }
+
+    reporting?.let { ReportDialog(it, buildReport) { reporting = null } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -206,7 +214,9 @@ private fun ArchiveTab(
     pending: List<DownloadRequest>,
     progress: DownloadProgress?,
     files: List<LibraryFile>,
+    hostedDisk: String?,
     marks: ImageMarks,
+    onReport: (ReportTarget) -> Unit,
 ) {
     Column {
         LazyRow(
@@ -309,7 +319,7 @@ private fun ArchiveTab(
             }
 
             is ListingState.Loaded -> {
-                val downloaded = files.map { it.name }.toSet()
+                val downloaded = files.associateBy { it.name }
                 val queued = pending.map { it.entry.url }.toSet()
                 val entries = remember(listing.entries, filter) { searchEntries(listing.entries, filter) }
                 if (entries.isEmpty()) {
@@ -322,12 +332,22 @@ private fun ArchiveTab(
                             } else {
                                 DiskRow(
                                     entry = entry,
-                                    downloaded = entry.fileName in downloaded,
+                                    downloaded = downloaded[entry.fileName],
+                                    hosted = entry.fileName == hostedDisk,
                                     working = entry.fileName in marks.working,
                                     queued = entry.url in queued,
                                     progress = progress?.takeIf { it.request.entry.url == entry.url },
                                     onQueue = { library.enqueue(entry) },
                                     onDownloadAndHost = { library.downloadAndHost(entry) },
+                                    onReport = {
+                                        onReport(
+                                            ReportTarget(
+                                                fileName = entry.fileName,
+                                                size = entry.size.ifEmpty { null },
+                                                source = sourceNameOf(entry.url),
+                                            )
+                                        )
+                                    },
                                 )
                             }
                         }
@@ -351,25 +371,26 @@ private fun FolderRow(entry: RemoteEntry, onClick: () -> Unit) {
 @Composable
 private fun DiskRow(
     entry: RemoteEntry,
-    downloaded: Boolean,
+    downloaded: LibraryFile?,       // the file in the library, when it is downloaded
+    hosted: Boolean,
     working: Boolean,
     queued: Boolean,
     progress: DownloadProgress?,
     onQueue: () -> Unit,
     onDownloadAndHost: () -> Unit,
+    onReport: () -> Unit,
 ) {
     val status = when {
         progress != null -> "Downloading…"
-        downloaded && working -> "Working"
-        downloaded -> "Downloaded"
+        downloaded != null && working -> "Working"
         queued -> "Queued"
         else -> null
     }
     ListItem(
-        headlineContent = { Text(entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        headlineContent = { ExpandableName(entry.name) },
         supportingContent = {
             Column {
-                Text(listOfNotNull(entry.size.ifEmpty { null }, status).joinToString("  ·  "))
+                Text(listOfNotNull((downloaded?.sizeText() ?: entry.size).ifEmpty { null }, status).joinToString("  ·  "))
                 if (progress != null) {
                     Spacer(Modifier.height(6.dp))
                     ProgressLine(progress)
@@ -377,20 +398,52 @@ private fun DiskRow(
             }
         },
         leadingContent = {
+            val (green, onGreen) = downloadedBadgeColors()
+            val (blue, onBlue) = hostingBadgeColors()
             IconBadge(
                 when {
-                    downloaded -> Icons.Rounded.CheckCircle
+                    downloaded != null -> Icons.Rounded.CheckCircle
                     entry.rom -> Icons.Rounded.Memory
                     else -> Icons.Rounded.Save
                 },
-                container = if (downloaded) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-                content = if (downloaded) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+                container = when {
+                    hosted -> blue
+                    downloaded != null -> green
+                    else -> MaterialTheme.colorScheme.secondaryContainer
+                },
+                content = when {
+                    hosted -> onBlue
+                    downloaded != null -> onGreen
+                    else -> MaterialTheme.colorScheme.onSecondaryContainer
+                },
             )
         },
         trailingContent = {
             Row {
-                IconButton(onClick = onQueue, enabled = !downloaded && !queued && progress == null) {
-                    Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = "Queue for download")
+                var menu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { menu = true }) {
+                        Icon(Icons.Rounded.MoreVert, contentDescription = "More for ${entry.name}")
+                    }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Queue for download") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = null) },
+                            enabled = downloaded == null && !queued && progress == null,
+                            onClick = {
+                                menu = false
+                                onQueue()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Report as not working") },
+                            leadingIcon = { Icon(Icons.Rounded.BugReport, contentDescription = null) },
+                            onClick = {
+                                menu = false
+                                onReport()
+                            }
+                        )
+                    }
                 }
                 FilledTonalIconButton(onClick = onDownloadAndHost, enabled = progress == null) {
                     Icon(Icons.Rounded.PlayArrow, contentDescription = "Download and host")
@@ -402,7 +455,13 @@ private fun DiskRow(
 }
 
 @Composable
-private fun LibraryTab(files: List<LibraryFile>, hostedDisk: String?, library: DiskLibrary, marks: ImageMarks) {
+private fun LibraryTab(
+    files: List<LibraryFile>,
+    hostedDisk: String?,
+    library: DiskLibrary,
+    marks: ImageMarks,
+    onReport: (ReportTarget) -> Unit,
+) {
     if (files.isEmpty()) {
         CenteredBox {
             Text(
@@ -417,29 +476,25 @@ private fun LibraryTab(files: List<LibraryFile>, hostedDisk: String?, library: D
         items(files, key = { it.name }) { file ->
             val hosted = file.name == hostedDisk
             ListItem(
-                headlineContent = {
-                    Text(
-                        file.name,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        fontWeight = if (hosted) FontWeight.SemiBold else null
-                    )
-                },
+                headlineContent = { ExpandableName(file.name, if (hosted) FontWeight.SemiBold else null) },
                 supportingContent = {
                     val dos2 = marks.imageDos2[file.name]?.let { if (it) "DOS2 on" else "DOS2 off" }
                     val working = if (file.name in marks.working) "Working" else null
-                    Text(listOfNotNull(formatSize(file.size), if (hosted) "Hosted" else null, working, dos2).joinToString("  ·  "))
+                    Text(listOfNotNull(file.sizeText(), working, dos2).joinToString("  ·  "))
                 },
                 leadingContent = {
+                    val (colors, onColors) = if (hosted) hostingBadgeColors() else downloadedBadgeColors()
                     IconBadge(
                         if (hasRomExtension(file.name)) Icons.Rounded.Memory else Icons.Rounded.Save,
-                        container = if (hosted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
-                        content = if (hosted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
+                        container = colors,
+                        content = onColors,
                     )
                 },
                 trailingContent = {
                     Row {
-                        LibraryMenu(file, hosted, library, marks)
+                        LibraryMenu(file, hosted, library, marks) {
+                            onReport(ReportTarget(fileName = file.name, size = formatSize(file.size)))
+                        }
                         FilledTonalIconButton(onClick = { library.host(file) }, enabled = !hosted) {
                             Icon(Icons.Rounded.PlayArrow, contentDescription = "Host")
                         }
@@ -451,9 +506,23 @@ private fun LibraryTab(files: List<LibraryFile>, hostedDisk: String?, library: D
     }
 }
 
+// a smaller font than the default so more of the name fits; a click shows all of it
+@Composable
+private fun ExpandableName(name: String, fontWeight: FontWeight? = null) {
+    var expanded by remember { mutableStateOf(false) }
+    Text(
+        name,
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = fontWeight,
+        maxLines = if (expanded) Int.MAX_VALUE else 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.clickable { expanded = !expanded }
+    )
+}
+
 // working mark, the DOS2 setting of the image and delete
 @Composable
-private fun LibraryMenu(file: LibraryFile, hosted: Boolean, library: DiskLibrary, marks: ImageMarks) {
+private fun LibraryMenu(file: LibraryFile, hosted: Boolean, library: DiskLibrary, marks: ImageMarks, onReport: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
@@ -486,6 +555,14 @@ private fun LibraryMenu(file: LibraryFile, hosted: Boolean, library: DiskLibrary
                 )
             }
             HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("Report as not working") },
+                leadingIcon = { Icon(Icons.Rounded.BugReport, contentDescription = null) },
+                onClick = {
+                    open = false
+                    onReport()
+                }
+            )
             DropdownMenuItem(
                 text = { Text("Delete") },
                 leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },

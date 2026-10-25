@@ -23,7 +23,7 @@ fun SkipDisk.atBoot(): SkipDisk = if (this == SkipDisk.NextBoot) SkipDisk.ThisBo
 
 // state shared between the FTDIClient I/O thread and the UI, owned by NowindApp so it outlives the activity
 class HostState {
-    val messages = MutableStateFlow(MessageList())
+    val messages = MessageLog()
     val deviceInfo = MutableStateFlow(DeviceInfo())
     val connection = MutableStateFlow(ConnectionState.Stopped)
     val hostedDisk = MutableStateFlow<String?>(null)
@@ -43,6 +43,6 @@ class HostState {
     fun write(message: String) {
         if (!Debug.enabled) return
         println(message)
-        messages.update { it.add(message) }
+        messages.add(message)
     }
 }

@@ -180,3 +180,15 @@ fun ActivityLight(pulses: Long, modifier: Modifier = Modifier, size: Dp = 12.dp)
             }
     )
 }
+
+// the colors of a disk's icon: green when it is downloaded, MSX blue while it is hosted
+@Composable
+fun downloadedBadgeColors(): Pair<Color, Color> =
+    if (androidx.compose.foundation.isSystemInDarkTheme()) {
+        nl.myquest.nowindcompanion.ui.theme.DownloadedGreenContainerDark to nl.myquest.nowindcompanion.ui.theme.DownloadedGreenContentDark
+    } else {
+        nl.myquest.nowindcompanion.ui.theme.DownloadedGreenContainerLight to nl.myquest.nowindcompanion.ui.theme.DownloadedGreenContentLight
+    }
+
+fun hostingBadgeColors(): Pair<Color, Color> =
+    nl.myquest.nowindcompanion.ui.theme.MsxBlue to nl.myquest.nowindcompanion.ui.theme.OnMsxBlue

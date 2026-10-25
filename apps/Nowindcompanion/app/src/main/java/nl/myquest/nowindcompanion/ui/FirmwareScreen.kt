@@ -74,6 +74,7 @@ fun FirmwareScreen(
     val localFile by firmware.localFile.collectAsState()
     val useLocalFile by firmware.useLocalFile.collectAsState()
     val fileInfo by firmware.fileInfo.collectAsState()
+    val cache by firmware.cache.collectAsState()
     var confirming by remember { mutableStateOf(false) }
     var editingLink by remember { mutableStateOf(false) }
     val busy = status is FirmwareStatus.Busy
@@ -163,6 +164,10 @@ fun FirmwareScreen(
 
             StatusText(status, connected)
             fileInfo?.let { Section("In the firmware file") { InfoTable(it) } }
+            // the last results of the buttons below, until a button is pressed again
+            if (status !is FirmwareStatus.Report) cache.version?.let { Section("Version (last check)") { InfoTable(it) } }
+            cache.verify?.let { Section("Last verify") { InfoTable(it) } }
+            cache.written?.let { Section("Last firmware update") { InfoTable(it) } }
 
             Text(
                 "Check version reports the interface version, its flash rom, the firmware version and the USB details.",

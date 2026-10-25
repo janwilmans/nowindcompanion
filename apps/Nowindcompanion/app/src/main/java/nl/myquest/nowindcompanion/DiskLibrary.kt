@@ -22,7 +22,15 @@ data class DownloadProgress(val request: DownloadRequest, val bytes: Long, val t
 }
 
 // a downloaded disk image, a snapshot so the UI does not query the storage provider while drawing
-data class LibraryFile(val name: String, val size: Long, val document: DocumentFile)
+// imageSize: the disk image inside a zip, null for other files and until it is read
+data class LibraryFile(val name: String, val size: Long, val document: DocumentFile, val imageSize: Long? = null)
+
+// "720.00 KB dsk  ·  312.00 KB zip" for a zip, else just the size
+fun LibraryFile.sizeText(): String = when {
+    !name.endsWith(".zip", ignoreCase = true) -> formatSize(size)
+    imageSize != null -> "${formatSize(imageSize)} dsk  ·  ${formatSize(size)} zip"
+    else -> "${formatSize(size)} zip"
+}
 
 // downloaded disk images in Download/nowindcompanion/disks and ROMs in .../roms, the download queue worker,
 // and hosting a disk (or the loader disk of a ROM) on the interface
@@ -225,15 +233,39 @@ class DiskLibrary(
         }
     }
 
+    // zip file name -> (size of the zip, size of the disk image in it or null), so a zip is only unpacked once
+    private val imageSizes = mutableMapOf<String, Pair<Long, Long?>>()
+
+    private fun cachedImageSize(name: String, zipSize: Long): Long? =
+        synchronized(imageSizes) { imageSizes[name]?.takeIf { it.first == zipSize }?.second }
+
     private fun refreshFiles() {
         _files.value = listOfNotNull(dir, romDir)
             .flatMap { it.listFiles().asList() }
             .mapNotNull { f ->
                 val name = f.name ?: return@mapNotNull null
                 val size = f.length()
-                if (f.isFile && size > 0 && !name.endsWith(".part")) LibraryFile(name, size, f) else null
+                if (f.isFile && size > 0 && !name.endsWith(".part")) LibraryFile(name, size, f, cachedImageSize(name, size)) else null
             }
             .sortedBy { it.name.lowercase() }
+        readImageSizes()
+    }
+
+    // the list is shown first, the sizes of the disk images in the zips follow
+    private fun readImageSizes() {
+        val missing = _files.value.filter { file ->
+            file.name.endsWith(".zip", ignoreCase = true) && synchronized(imageSizes) { imageSizes[file.name]?.first != file.size }
+        }
+        if (missing.isEmpty()) return
+        for (file in missing) {
+            val imageSize = try {
+                readDiskImage(file.name) { storage.open(file.document) }.size.toLong()
+            } catch (e: Exception) {
+                null
+            }
+            synchronized(imageSizes) { imageSizes[file.name] = file.size to imageSize }
+        }
+        _files.value = _files.value.map { it.copy(imageSize = cachedImageSize(it.name, it.size)) }
     }
 
     private fun publishQueue() {
@@ -250,6 +282,8 @@ class DiskLibrary(
             try {
                 val file = download(request)
                 refreshFiles()
+                val origin = sourceNameOf(request.entry.url)
+                listOfNotNull(file.name, request.entry.fileName).distinct().forEach { settings.setImageOrigin(it, origin) }
                 if (request.hostWhenDone) {
                     host(file)
                 } else {

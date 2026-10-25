@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import nl.myquest.nowindcompanion.APP_FOLDER
 import nl.myquest.nowindcompanion.NowindApp
 import nl.myquest.nowindcompanion.Settings
+import nl.myquest.nowindcompanion.buildProblemReport
 
 object Routes {
     const val MENU = "menu"
@@ -41,7 +42,6 @@ fun NowindNavHost(app: NowindApp) {
     val readStats by app.state.readStats.collectAsState()
     val writeStats by app.state.writeStats.collectAsState()
     val commands by app.state.commands.collectAsState()
-    val messages by app.state.messages.collectAsState()
     val settings by app.settings.settings.collectAsState(initial = Settings())
     val storageRoot by app.storage.root.collectAsState()
     val back: () -> Unit = { nav.popBackStack() }
@@ -94,6 +94,13 @@ fun NowindNavHost(app: NowindApp) {
                     onWorking = { name, working -> app.appScope.launch { app.settings.setWorking(name, working) } },
                     onImageDos2 = { name, enable -> app.appScope.launch { app.settings.setImageDos2(name, enable) } },
                 ),
+                buildReport = { target, note ->
+                    buildProblemReport(
+                        target, note, settings, hostedDisk,
+                        debugLog = app.state.messages.snapshot(),
+                        firmware = app.firmware.cache.value,
+                    )
+                },
                 onBack = back,
             )
         }
@@ -123,7 +130,7 @@ fun NowindNavHost(app: NowindApp) {
                 onBack = back,
             )
         }
-        composable(Routes.DEBUG) { DebugScreen(messages, settings.debugEnabled, back) }
+        composable(Routes.DEBUG) { DebugScreen(app.state.messages, settings.debugEnabled, back) }
     }
 }
 

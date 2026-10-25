@@ -10,6 +10,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
 import org.json.JSONObject
 
 private const val SETTINGS_FILE = "settings.json"
@@ -27,6 +28,8 @@ data class Settings(
     val firmwareErase: EraseMethod = EraseMethod.Chip,
     val working: Set<String> = emptySet(),          // file names of the library marked as checked / working
     val imageDos2: Map<String, Boolean> = emptyMap(),   // file name -> DOS2 for that image, overrides enableDos2
+    val origins: Map<String, String> = emptyMap(),   // file name -> the source it was downloaded from
+    val firmwareCache: FirmwareCache = FirmwareCache(), // results of the firmware buttons, see FirmwareUpdater
 ) {
     // all places to find disk images, the built-in default first
     val allSources: List<DiskSource>
@@ -52,6 +55,36 @@ fun decodeImageDos2(text: String?): Map<String, Boolean> =
         if (name.isEmpty() || value !in setOf("0", "1")) null else name to (value == "1")
     }.toMap()
 
+// 'file name<TAB>source' per line, for problem reports
+fun encodeOrigins(map: Map<String, String>): String =
+    map.entries.sortedBy { it.key }.joinToString("\n") { (file, source) -> "$file\t${source.replace('\t', ' ').replace('\n', ' ')}" }
+
+fun decodeOrigins(text: String?): Map<String, String> =
+    text.orEmpty().lines().mapNotNull { line ->
+        val file = line.substringBefore('\t')
+        val source = line.substringAfter('\t', "")
+        if (file.isEmpty() || source.isEmpty()) null else file to source
+    }.toMap()
+
+fun encodeFirmwareCache(cache: FirmwareCache): String {
+    fun items(list: List<Pair<String, String>>?) =
+        list?.let { JSONArray(it.map { (label, value) -> JSONArray(listOf(label, value)) }) } ?: JSONObject.NULL
+    return JSONObject().put("version", items(cache.version)).put("verify", items(cache.verify)).put("written", items(cache.written)).toString()
+}
+
+fun decodeFirmwareCache(text: String?): FirmwareCache {
+    if (text.isNullOrEmpty()) return FirmwareCache()
+    return try {
+        val json = JSONObject(text)
+        fun items(name: String): List<Pair<String, String>>? = json.optJSONArray(name)?.let { array ->
+            (0 until array.length()).map { array.getJSONArray(it).let { pair -> pair.getString(0) to pair.getString(1) } }
+        }
+        FirmwareCache(items("version"), items("verify"), items("written"))
+    } catch (e: Exception) {
+        FirmwareCache()
+    }
+}
+
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
 class SettingsRepository(private val context: Context) {
@@ -69,6 +102,8 @@ class SettingsRepository(private val context: Context) {
         val FIRMWARE_ERASE = stringPreferencesKey("firmware_erase")
         val WORKING = stringPreferencesKey("working_images")
         val IMAGE_DOS2 = stringPreferencesKey("image_dos2")
+        val IMAGE_ORIGINS = stringPreferencesKey("image_origins")
+        val FIRMWARE_CACHE = stringPreferencesKey("firmware_cache")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { it.toSettings() }
@@ -86,6 +121,8 @@ class SettingsRepository(private val context: Context) {
         firmwareErase = EraseMethod.values().find { it.name == this[Keys.FIRMWARE_ERASE] } ?: EraseMethod.Chip,
         working = decodeNames(this[Keys.WORKING]),
         imageDos2 = decodeImageDos2(this[Keys.IMAGE_DOS2]),
+        origins = decodeOrigins(this[Keys.IMAGE_ORIGINS]),
+        firmwareCache = decodeFirmwareCache(this[Keys.FIRMWARE_CACHE]),
     )
 
     suspend fun setEnableDos2(value: Boolean) {
@@ -104,6 +141,18 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit {
             val map = decodeImageDos2(it[Keys.IMAGE_DOS2])
             it[Keys.IMAGE_DOS2] = encodeImageDos2(if (enable == null) map - image else map + (image to enable))
+        }
+    }
+
+    suspend fun setImageOrigin(image: String, source: String) {
+        context.dataStore.edit {
+            it[Keys.IMAGE_ORIGINS] = encodeOrigins(decodeOrigins(it[Keys.IMAGE_ORIGINS]) + (image to source))
+        }
+    }
+
+    suspend fun updateFirmwareCache(change: (FirmwareCache) -> FirmwareCache) {
+        context.dataStore.edit {
+            it[Keys.FIRMWARE_CACHE] = encodeFirmwareCache(change(decodeFirmwareCache(it[Keys.FIRMWARE_CACHE])))
         }
     }
 

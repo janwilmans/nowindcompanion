@@ -1,6 +1,7 @@
 package nl.myquest.nowindcompanion
 
 import java.io.IOException
+import java.security.MessageDigest
 
 const val MAX_FIRMWARE_SIZE = 4 * 1024 * 1024       // the flash rom of the v2 interface, v1 has 512 KB
 const val FIRMWARE_SIZE = 512 * 1024                // nowind.rom: 32 banks, all of the v1 flash rom
@@ -73,6 +74,10 @@ fun findFirmwareVersions(rom: ByteArray): FirmwareVersions {
     return FirmwareVersions(FIRMWARE_VERSION.find(text)?.value, FLASH_WRITER_VERSION.find(text)?.value)
 }
 
+// firstDifference: offset of the first byte that differs from the firmware, null when equal;
+// sha256: of the first size bytes of the flash rom as read
+data class VerifyResult(val firstDifference: Int?, val sha256: String, val size: Int)
+
 data class FlashProgress(val phase: String, val fraction: Float?)
 
 class NoFlashWriterException : IOException("The MSX does not answer. Is it in Nowind Flash Writer Mode (red screen)?")
@@ -135,6 +140,29 @@ class FlashWriter(
             progress("Verifying", block + 1, blocks)
         }
         return null
+    }
+
+    // like verify, but always reads the whole range so the hash covers what the interface holds
+    fun verifyWithHash(firmware: ByteArray): VerifyResult {
+        val rom = checkFirmware(firmware)
+        val blocks = rom.size / BLOCK_SIZE
+        val digest = MessageDigest.getInstance("SHA-256")
+        var difference: Int? = null
+        for (block in 0 until blocks) {
+            val offset = block * BLOCK_SIZE
+            val data = readBlock(block)
+            digest.update(data)
+            if (difference == null) {
+                for (i in 0 until BLOCK_SIZE) {
+                    if (data[i] != rom[offset + i]) {
+                        difference = offset + i
+                        break
+                    }
+                }
+            }
+            progress("Verifying", block + 1, blocks)
+        }
+        return VerifyResult(difference, digest.digest().joinToString("") { "%02x".format(it) }, rom.size)
     }
 
     fun update(firmware: ByteArray, erase: EraseMethod = EraseMethod.Chip) {

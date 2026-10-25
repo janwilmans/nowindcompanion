@@ -11,20 +11,25 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import nl.myquest.nowindcompanion.MessageList
+import nl.myquest.nowindcompanion.MessageLog
 
 @Composable
-fun DebugScreen(messages: MessageList, debugEnabled: Boolean, onBack: () -> Unit) {
+fun DebugScreen(log: MessageLog, debugEnabled: Boolean, onBack: () -> Unit) {
     ScreenScaffold("Debug log", onBack) { padding ->
         val listState = rememberLazyListState()
-        LaunchedEffect(messages) {
-            if (messages.data.isNotEmpty()) listState.animateScrollToItem(messages.data.size - 1)
+        val version by log.version.collectAsState()
+        val messages = remember(version) { log.snapshot() }
+        LaunchedEffect(version) {
+            if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
         }
-        if (messages.data.isEmpty()) {
+        if (messages.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
                     if (debugEnabled) "No messages yet" else "Debug information is disabled in Settings",
@@ -38,7 +43,7 @@ fun DebugScreen(messages: MessageList, debugEnabled: Boolean, onBack: () -> Unit
             contentPadding = PaddingValues(16.dp),
             modifier = Modifier.padding(padding)
         ) {
-            items(messages.data) { message ->
+            items(messages) { message ->
                 Text(
                     message,
                     fontFamily = FontFamily.Monospace,
